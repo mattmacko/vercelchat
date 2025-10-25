@@ -1,0 +1,1 @@
+ALTER TABLE "User" ADD COLUMN "tier" varchar(16) DEFAULT 'free' NOT NULL;

@@ -57,7 +57,14 @@ export async function createUser(email: string, password: string) {
   const hashedPassword = generateHashedPassword(password);
 
   try {
-    return await db.insert(user).values({ email, password: hashedPassword });
+    return await db
+      .insert(user)
+      .values({ email, password: hashedPassword, tier: "free" })
+      .returning({
+        id: user.id,
+        email: user.email,
+        tier: user.tier,
+      });
   } catch (_error) {
     throw new ChatSDKError("bad_request:database", "Failed to create user");
   }
@@ -68,14 +75,48 @@ export async function createGuestUser() {
   const password = generateHashedPassword(generateUUID());
 
   try {
-    return await db.insert(user).values({ email, password }).returning({
-      id: user.id,
-      email: user.email,
-    });
+    return await db
+      .insert(user)
+      .values({ email, password, tier: "free" })
+      .returning({
+        id: user.id,
+        email: user.email,
+        tier: user.tier,
+      });
   } catch (_error) {
     throw new ChatSDKError(
       "bad_request:database",
       "Failed to create guest user"
+    );
+  }
+}
+
+export async function upgradeUserToPro(userId: string) {
+  try {
+    return await db
+      .update(user)
+      .set({ tier: "pro" })
+      .where(eq(user.id, userId))
+      .returning({ id: user.id, tier: user.tier });
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to upgrade user tier"
+    );
+  }
+}
+
+export async function downgradeUserToFree(userId: string) {
+  try {
+    return await db
+      .update(user)
+      .set({ tier: "free" })
+      .where(eq(user.id, userId))
+      .returning({ id: user.id, tier: user.tier });
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to downgrade user tier"
     );
   }
 }
