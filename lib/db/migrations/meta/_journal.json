@@ -64,6 +64,13 @@
       "when": 1761331097774,
       "tag": "0008_smiling_energizer",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1761422572800,
+      "tag": "0009_bright_shinko_yamashiro",
+      "breakpoints": true
     }
   ]
 }

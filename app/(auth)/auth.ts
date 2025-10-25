@@ -6,7 +6,7 @@ import { DUMMY_PASSWORD } from "@/lib/constants";
 import { createGuestUser, getUser } from "@/lib/db/queries";
 import { authConfig } from "./auth.config";
 
-export type UserType = "guest" | "regular";
+export type UserType = "guest" | "regular" | "pro";
 
 declare module "next-auth" {
   interface Session extends DefaultSession {
@@ -62,7 +62,9 @@ export const {
           return null;
         }
 
-        return { ...user, type: "regular" };
+        const userType: UserType = user.tier === "pro" ? "pro" : "regular";
+
+        return { ...user, type: userType };
       },
     }),
     Credentials({

@@ -25,12 +25,14 @@ export const myProvider = isTestEnvironment
     })()
   : customProvider({
       languageModels: {
-        "chat-model": gateway.languageModel("xai/grok-4-fast"),
+        "chat-model": gateway.languageModel("xai/grok-4-fast-non-reasoning"),
         "chat-model-reasoning": wrapLanguageModel({
           model: gateway.languageModel("xai/grok-4-fast-reasoning"),
           middleware: extractReasoningMiddleware({ tagName: "think" }),
         }),
-        "title-model": gateway.languageModel("xai/grok-4-fast"),
-        "artifact-model": gateway.languageModel("xai/grok-4-fast"),
+        "title-model": gateway.languageModel("xai/grok-4-fast-non-reasoning"),
+        "artifact-model": gateway.languageModel(
+          "xai/grok-4-fast-non-reasoning"
+        ),
       },
     });

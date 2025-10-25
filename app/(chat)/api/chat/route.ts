@@ -31,7 +31,8 @@ import {
   createStreamId,
   deleteChatById,
   getChatById,
-  getMessageCountByUserId,
+  getUserById,
+  incrementUserMessagesSentCount,
   getMessagesByChatId,
   saveChat,
   saveMessages,
@@ -113,15 +114,21 @@ export async function POST(request: Request) {
       return new ChatSDKError("unauthorized:chat").toResponse();
     }
 
-    const userType: UserType = session.user.type;
+    const dbUser = await getUserById(session.user.id);
 
-    const messageCount = await getMessageCountByUserId({
-      id: session.user.id,
-      differenceInHours: 24,
-    });
+    if (!dbUser) {
+      return new ChatSDKError("unauthorized:chat").toResponse();
+    }
 
-    if (messageCount > entitlementsByUserType[userType].maxMessagesPerDay) {
-      return new ChatSDKError("rate_limit:chat").toResponse();
+    const userType: UserType =
+      dbUser.tier === "pro" ? "pro" : session.user.type;
+
+    const { maxLifetimeMessages } = entitlementsByUserType[userType];
+
+    if (maxLifetimeMessages !== null) {
+      if (dbUser.messagesSentCount >= maxLifetimeMessages) {
+        return new ChatSDKError("rate_limit:chat").toResponse();
+      }
     }
 
     const chat = await getChatById({ id });
@@ -167,6 +174,8 @@ export async function POST(request: Request) {
         },
       ],
     });
+
+    await incrementUserMessagesSentCount({ userId: session.user.id });
 
     const streamId = generateUUID();
     await createStreamId({ streamId, chatId: id });

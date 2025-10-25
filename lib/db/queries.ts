@@ -3,13 +3,12 @@ import "server-only";
 import {
   and,
   asc,
-  count,
   desc,
   eq,
   gt,
-  gte,
   inArray,
   lt,
+  sql,
   type SQL,
 } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -59,11 +58,17 @@ export async function createUser(email: string, password: string) {
   try {
     return await db
       .insert(user)
-      .values({ email, password: hashedPassword, tier: "free" })
+      .values({
+        email,
+        password: hashedPassword,
+        tier: "free",
+        messagesSentCount: 0,
+      })
       .returning({
         id: user.id,
         email: user.email,
         tier: user.tier,
+        messagesSentCount: user.messagesSentCount,
       });
   } catch (_error) {
     throw new ChatSDKError("bad_request:database", "Failed to create user");
@@ -77,11 +82,12 @@ export async function createGuestUser() {
   try {
     return await db
       .insert(user)
-      .values({ email, password, tier: "free" })
+      .values({ email, password, tier: "free", messagesSentCount: 0 })
       .returning({
         id: user.id,
         email: user.email,
         tier: user.tier,
+        messagesSentCount: user.messagesSentCount,
       });
   } catch (_error) {
     throw new ChatSDKError(
@@ -117,6 +123,41 @@ export async function downgradeUserToFree(userId: string) {
     throw new ChatSDKError(
       "bad_request:database",
       "Failed to downgrade user tier"
+    );
+  }
+}
+
+export async function getUserById(id: string) {
+  try {
+    const [result] = await db.select().from(user).where(eq(user.id, id));
+    return result ?? null;
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to get user by id"
+    );
+  }
+}
+
+export async function incrementUserMessagesSentCount({
+  userId,
+  amount = 1,
+}: {
+  userId: string;
+  amount?: number;
+}) {
+  try {
+    return await db
+      .update(user)
+      .set({
+        messagesSentCount: sql`${user.messagesSentCount} + ${amount}`,
+      })
+      .where(eq(user.id, userId))
+      .returning({ id: user.id, messagesSentCount: user.messagesSentCount });
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to increment user message count"
     );
   }
 }
@@ -562,39 +603,6 @@ export async function updateChatLastContextById({
   }
 }
 
-export async function getMessageCountByUserId({
-  id,
-  differenceInHours,
-}: {
-  id: string;
-  differenceInHours: number;
-}) {
-  try {
-    const twentyFourHoursAgo = new Date(
-      Date.now() - differenceInHours * 60 * 60 * 1000
-    );
-
-    const [stats] = await db
-      .select({ count: count(message.id) })
-      .from(message)
-      .innerJoin(chat, eq(message.chatId, chat.id))
-      .where(
-        and(
-          eq(chat.userId, id),
-          gte(message.createdAt, twentyFourHoursAgo),
-          eq(message.role, "user")
-        )
-      )
-      .execute();
-
-    return stats?.count ?? 0;
-  } catch (_error) {
-    throw new ChatSDKError(
-      "bad_request:database",
-      "Failed to get message count by user id"
-    );
-  }
-}
 
 export async function createStreamId({
   streamId,
