@@ -2,6 +2,7 @@ import type { InferSelectModel } from "drizzle-orm";
 import {
   boolean,
   foreignKey,
+  index,
   integer,
   json,
   jsonb,
@@ -14,13 +15,22 @@ import {
 } from "drizzle-orm/pg-core";
 import type { AppUsage } from "../usage";
 
-export const user = pgTable("User", {
-  id: uuid("id").primaryKey().notNull().defaultRandom(),
-  email: varchar("email", { length: 64 }).notNull(),
-  password: varchar("password", { length: 64 }),
-  tier: varchar("tier", { length: 16 }).notNull().default("free"),
-  messagesSentCount: integer("messagesSentCount").notNull().default(0),
-});
+export const user = pgTable(
+  "User",
+  {
+    id: uuid("id").primaryKey().notNull().defaultRandom(),
+    email: varchar("email", { length: 64 }).notNull(),
+    password: varchar("password", { length: 64 }),
+    tier: varchar("tier", { length: 16 }).notNull().default("free"),
+    stripeCustomerId: text("stripeCustomerId"),
+    stripeSubscriptionId: text("stripeSubscriptionId"),
+    proExpiresAt: timestamp("proExpiresAt"),
+    messagesSentCount: integer("messagesSentCount").notNull().default(0),
+  },
+  (table) => ({
+    tierIdx: index("User_tier_idx").on(table.tier),
+  })
+);
 
 export type User = InferSelectModel<typeof user>;
 

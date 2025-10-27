@@ -68,6 +68,9 @@ export async function createUser(email: string, password: string) {
         id: user.id,
         email: user.email,
         tier: user.tier,
+        stripeCustomerId: user.stripeCustomerId,
+        stripeSubscriptionId: user.stripeSubscriptionId,
+        proExpiresAt: user.proExpiresAt,
         messagesSentCount: user.messagesSentCount,
       });
   } catch (_error) {
@@ -87,6 +90,9 @@ export async function createGuestUser() {
         id: user.id,
         email: user.email,
         tier: user.tier,
+        stripeCustomerId: user.stripeCustomerId,
+        stripeSubscriptionId: user.stripeSubscriptionId,
+        proExpiresAt: user.proExpiresAt,
         messagesSentCount: user.messagesSentCount,
       });
   } catch (_error) {

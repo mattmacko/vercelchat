@@ -71,6 +71,13 @@
       "when": 1761422572800,
       "tag": "0009_bright_shinko_yamashiro",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1761590794324,
+      "tag": "0010_puzzling_jack_flag",
+      "breakpoints": true
     }
   ]
 }
