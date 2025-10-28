@@ -32,6 +32,7 @@ import { MultimodalInput } from "./multimodal-input";
 import { getChatHistoryPaginationKey } from "./sidebar-history";
 import { toast } from "./toast";
 import type { VisibilityType } from "./visibility-selector";
+import { UpgradeOverlay } from "./upgrade-overlay";
 
 export function Chat({
   id,
@@ -61,6 +62,7 @@ export function Chat({
   const [input, setInput] = useState<string>("");
   const [usage, setUsage] = useState<AppUsage | undefined>(initialLastContext);
   const [showCreditCardAlert, setShowCreditCardAlert] = useState(false);
+  const [showUpgradeOverlay, setShowUpgradeOverlay] = useState(false);
   const [currentModelId, setCurrentModelId] = useState(initialChatModel);
   const currentModelIdRef = useRef(currentModelId);
 
@@ -107,6 +109,11 @@ export function Chat({
     },
     onError: (error) => {
       if (error instanceof ChatSDKError) {
+        if (error.type === "rate_limit") {
+          setShowUpgradeOverlay(true);
+          return;
+        }
+
         // Check if it's a credit card error
         if (
           error.message?.includes("AI Gateway requires a valid credit card")
@@ -160,7 +167,6 @@ export function Chat({
         <ChatHeader
           chatId={id}
           isReadonly={isReadonly}
-          selectedVisibilityType={initialVisibilityType}
         />
 
         <Messages
@@ -242,8 +248,13 @@ export function Chat({
               Activate
             </AlertDialogAction>
           </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      </AlertDialogContent>
+    </AlertDialog>
+
+      <UpgradeOverlay
+        onOpenChange={setShowUpgradeOverlay}
+        open={showUpgradeOverlay}
+      />
     </>
   );
 }

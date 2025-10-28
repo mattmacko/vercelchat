@@ -1,4 +1,5 @@
 import type { UserType } from "@/app/(auth)/auth";
+import { FREE_LIFETIME_MESSAGE_LIMIT } from "@/lib/billing/config";
 import type { ChatModel } from "./models";
 
 type Entitlements = {
@@ -16,7 +17,7 @@ export const entitlementsByUserType: Record<UserType, Entitlements> = {
    * For users without an account
    */
   guest: {
-    maxLifetimeMessages: 5,
+    maxLifetimeMessages: FREE_LIFETIME_MESSAGE_LIMIT,
     availableChatModelIds: defaultChatModels,
   },
 
@@ -24,7 +25,7 @@ export const entitlementsByUserType: Record<UserType, Entitlements> = {
    * For users with an account
    */
   regular: {
-    maxLifetimeMessages: 5,
+    maxLifetimeMessages: FREE_LIFETIME_MESSAGE_LIMIT,
     availableChatModelIds: defaultChatModels,
   },
 
