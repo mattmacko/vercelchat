@@ -24,6 +24,7 @@ import {
   type DBMessage,
   document,
   message,
+  stripeEventLog,
   type Suggestion,
   stream,
   suggestion,
@@ -142,6 +143,109 @@ export async function getUserById(id: string) {
       "bad_request:database",
       "Failed to get user by id"
     );
+  }
+}
+
+export async function setStripeCustomerId(userId: string, customerId: string) {
+  try {
+    await db
+      .update(user)
+      .set({ stripeCustomerId: customerId })
+      .where(eq(user.id, userId));
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to set Stripe customer id"
+    );
+  }
+}
+
+export async function upsertStripeDetails(
+  userId: string,
+  data: {
+    tier?: "pro" | "free";
+    stripeCustomerId?: string | null;
+    stripeSubscriptionId?: string | null;
+    proExpiresAt?: Date | null;
+  }
+) {
+  const updateData: Record<string, any> = {};
+
+  if (data.tier) {
+    updateData.tier = data.tier;
+  }
+
+  if (data.stripeCustomerId !== undefined) {
+    updateData.stripeCustomerId = data.stripeCustomerId ?? null;
+  }
+
+  if (data.stripeSubscriptionId !== undefined) {
+    updateData.stripeSubscriptionId = data.stripeSubscriptionId ?? null;
+  }
+
+  if (data.proExpiresAt !== undefined) {
+    updateData.proExpiresAt = data.proExpiresAt;
+  }
+
+  if (Object.keys(updateData).length === 0) {
+    return;
+  }
+
+  try {
+    await db.update(user).set(updateData).where(eq(user.id, userId));
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to update Stripe details"
+    );
+  }
+}
+
+export async function updateByCustomerId(
+  customerId: string,
+  data: {
+    tier?: "pro" | "free";
+    stripeSubscriptionId?: string | null;
+    proExpiresAt?: Date | null;
+  }
+) {
+  const updateData: Record<string, any> = {};
+
+  if (data.tier) {
+    updateData.tier = data.tier;
+  }
+
+  if (data.stripeSubscriptionId !== undefined) {
+    updateData.stripeSubscriptionId = data.stripeSubscriptionId ?? null;
+  }
+
+  if (data.proExpiresAt !== undefined) {
+    updateData.proExpiresAt = data.proExpiresAt;
+  }
+
+  if (Object.keys(updateData).length === 0) {
+    return;
+  }
+
+  try {
+    await db
+      .update(user)
+      .set(updateData)
+      .where(eq(user.stripeCustomerId, customerId));
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to update user by Stripe customer id"
+    );
+  }
+}
+
+export async function logStripeEventOnce(eventId: string) {
+  try {
+    await db.insert(stripeEventLog).values({ id: eventId });
+    return true;
+  } catch (_error) {
+    return false;
   }
 }
 

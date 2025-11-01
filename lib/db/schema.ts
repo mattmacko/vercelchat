@@ -34,6 +34,11 @@ export const user = pgTable(
 
 export type User = InferSelectModel<typeof user>;
 
+export const stripeEventLog = pgTable("stripe_event_log", {
+  id: text("id").primaryKey(),
+  seenAt: timestamp("seen_at", { withTimezone: true }).defaultNow(),
+});
+
 export const chat = pgTable("Chat", {
   id: uuid("id").primaryKey().notNull().defaultRandom(),
   createdAt: timestamp("createdAt").notNull(),

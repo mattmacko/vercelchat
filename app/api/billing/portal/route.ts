@@ -1,12 +1,19 @@
-import { NextResponse } from "next/server";
-import { auth } from "@/app/(auth)/auth";
-import { getUserById } from "@/lib/db/queries";
-import { ChatSDKError } from "@/lib/errors";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-export async function POST() {
+import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/app/(auth)/auth";
+import {
+  getUserById,
+  setStripeCustomerId,
+} from "@/lib/db/queries";
+import { ChatSDKError } from "@/lib/errors";
+import { getStripe } from "@/lib/stripe/client";
+
+export async function POST(request: NextRequest) {
   const session = await auth();
 
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return new ChatSDKError("unauthorized:api").toResponse();
   }
 
@@ -16,18 +23,43 @@ export async function POST() {
     return new ChatSDKError("unauthorized:api").toResponse();
   }
 
-  if (!dbUser.stripeCustomerId) {
-    return NextResponse.json(
+  const stripe = getStripe();
+  const origin = process.env.APP_URL ?? request.nextUrl.origin;
+
+  let customerId = dbUser.stripeCustomerId ?? null;
+
+  try {
+    if (!customerId) {
+      const customer = await stripe.customers.create(
+        {
+          email: session.user.email ?? undefined,
+          metadata: { userId: session.user.id },
+        },
+        { idempotencyKey: `cust:${session.user.id}` }
+      );
+
+      customerId = customer.id;
+      await setStripeCustomerId(session.user.id, customerId);
+    }
+
+    const portalSession = await stripe.billingPortal.sessions.create(
       {
-        message:
-          "No Stripe customer is associated with this account yet. Please upgrade first.",
+        customer: customerId,
+        return_url: `${origin}/settings/billing`,
       },
-      { status: 400 }
+      { idempotencyKey: `portal:${session.user.id}:${Date.now()}` }
+    );
+
+    if (!portalSession.url) {
+      throw new Error("Stripe portal session did not return a URL");
+    }
+
+    return NextResponse.json({ url: portalSession.url });
+  } catch (error: any) {
+    console.error("Stripe portal error", error);
+    return NextResponse.json(
+      { error: "Failed to create Stripe billing portal session" },
+      { status: 500 }
     );
   }
-
-  const portalUrl =
-    process.env.NEXT_PUBLIC_STRIPE_PORTAL_URL ?? "/billing/manage";
-
-  return NextResponse.json({ url: portalUrl });
 }
