@@ -153,6 +153,7 @@ export async function setStripeCustomerId(userId: string, customerId: string) {
       .set({ stripeCustomerId: customerId })
       .where(eq(user.id, userId));
   } catch (_error) {
+    console.error("setStripeCustomerId error", _error, { userId, customerId });
     throw new ChatSDKError(
       "bad_request:database",
       "Failed to set Stripe customer id"
@@ -194,6 +195,7 @@ export async function upsertStripeDetails(
   try {
     await db.update(user).set(updateData).where(eq(user.id, userId));
   } catch (_error) {
+    console.error("upsertStripeDetails error", _error, { userId, updateData });
     throw new ChatSDKError(
       "bad_request:database",
       "Failed to update Stripe details"
@@ -233,6 +235,10 @@ export async function updateByCustomerId(
       .set(updateData)
       .where(eq(user.stripeCustomerId, customerId));
   } catch (_error) {
+    console.error("updateByCustomerId error", _error, {
+      customerId,
+      updateData,
+    });
     throw new ChatSDKError(
       "bad_request:database",
       "Failed to update user by Stripe customer id"

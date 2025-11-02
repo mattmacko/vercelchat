@@ -1,14 +1,14 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { NextRequest, NextResponse } from "next/server";
-import Stripe from "stripe";
-import { getStripe } from "@/lib/stripe/client";
+import { type NextRequest, NextResponse } from "next/server";
+import type Stripe from "stripe";
 import {
   logStripeEventOnce,
-  upsertStripeDetails,
   updateByCustomerId,
+  upsertStripeDetails,
 } from "@/lib/db/queries";
+import { getStripe } from "@/lib/stripe/client";
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -24,7 +24,10 @@ export async function POST(request: NextRequest) {
   const signature = request.headers.get("stripe-signature");
 
   if (!signature) {
-    return NextResponse.json({ error: "Missing Stripe signature" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Missing Stripe signature" },
+      { status: 400 }
+    );
   }
 
   const rawBody = await request.text();
@@ -56,19 +59,23 @@ export async function POST(request: NextRequest) {
         const customerId =
           typeof sessionCustomer === "string"
             ? sessionCustomer
-            : sessionCustomer?.id ?? null;
+            : (sessionCustomer?.id ?? null);
 
-        const subscriptionId = typeof session.subscription === "string"
-          ? session.subscription
-          : session.subscription?.toString() ?? null;
+        const subscriptionId =
+          typeof session.subscription === "string"
+            ? session.subscription
+            : (session.subscription?.toString() ?? null);
 
         const userId = session.metadata?.userId as string | undefined;
 
         let proExpiresAt: Date | null = null;
 
         if (subscriptionId) {
-          const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-          proExpiresAt = new Date(subscription.current_period_end * 1000);
+          const subscription =
+            await stripe.subscriptions.retrieve(subscriptionId);
+          if (subscription.current_period_end) {
+            proExpiresAt = new Date(subscription.current_period_end * 1000);
+          }
         }
 
         if (userId) {
@@ -96,14 +103,34 @@ export async function POST(request: NextRequest) {
           typeof subscriptionCustomer === "string"
             ? subscriptionCustomer
             : subscriptionCustomer.id;
+        const userId = subscription.metadata?.userId as string | undefined;
 
-        const proExpiresAt = new Date(subscription.current_period_end * 1000);
+        const proExpiresAt = subscription.current_period_end
+          ? new Date(subscription.current_period_end * 1000)
+          : null;
 
-        if (subscription.status === "canceled" && !subscription.cancel_at_period_end) {
-          await updateByCustomerId(customerId, {
-            tier: "free",
-            stripeSubscriptionId: null,
-            proExpiresAt: null,
+        if (
+          subscription.status === "canceled" &&
+          !subscription.cancel_at_period_end
+        ) {
+          if (userId) {
+            await upsertStripeDetails(userId, {
+              tier: "free",
+              stripeSubscriptionId: null,
+              proExpiresAt: null,
+            });
+          } else {
+            await updateByCustomerId(customerId, {
+              tier: "free",
+              stripeSubscriptionId: null,
+              proExpiresAt: null,
+            });
+          }
+        } else if (userId) {
+          await upsertStripeDetails(userId, {
+            tier: "pro",
+            stripeSubscriptionId: subscription.id,
+            proExpiresAt,
           });
         } else {
           await updateByCustomerId(customerId, {
@@ -123,12 +150,21 @@ export async function POST(request: NextRequest) {
           typeof subscriptionCustomer === "string"
             ? subscriptionCustomer
             : subscriptionCustomer.id;
+        const userId = subscription.metadata?.userId as string | undefined;
 
-        await updateByCustomerId(customerId, {
-          tier: "free",
-          stripeSubscriptionId: null,
-          proExpiresAt: null,
-        });
+        if (userId) {
+          await upsertStripeDetails(userId, {
+            tier: "free",
+            stripeSubscriptionId: null,
+            proExpiresAt: null,
+          });
+        } else {
+          await updateByCustomerId(customerId, {
+            tier: "free",
+            stripeSubscriptionId: null,
+            proExpiresAt: null,
+          });
+        }
 
         break;
       }
