@@ -17,7 +17,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (pathname.startsWith("/api/stripe/webhook")) {
+  if (
+    pathname.startsWith("/api/stripe/webhook") ||
+    pathname === "/webhook" ||
+    pathname.startsWith("/webhook/")
+  ) {
     return NextResponse.next();
   }
 

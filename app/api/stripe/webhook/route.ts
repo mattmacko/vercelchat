@@ -12,6 +12,36 @@ import { getStripe } from "@/lib/stripe/client";
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
+const SUBSCRIPTION_ACTIVE_STATUSES = new Set<Stripe.Subscription.Status>([
+  "active",
+  "trialing",
+  "past_due",
+]);
+
+const SUBSCRIPTION_FREE_STATUSES = new Set<Stripe.Subscription.Status>([
+  "canceled",
+  "incomplete",
+  "incomplete_expired",
+  "unpaid",
+]);
+
+function getSubscriptionPeriodEnd(subscription: Stripe.Subscription) {
+  const items = subscription.items?.data ?? [];
+
+  let latestPeriodEnd: number | null = null;
+
+  for (const item of items) {
+    const periodEnd = Number(item.current_period_end);
+    if (!Number.isFinite(periodEnd)) {
+      continue;
+    }
+    latestPeriodEnd =
+      latestPeriodEnd === null ? periodEnd : Math.max(latestPeriodEnd, periodEnd);
+  }
+
+  return latestPeriodEnd ? new Date(latestPeriodEnd * 1000) : null;
+}
+
 export async function POST(request: NextRequest) {
   if (!WEBHOOK_SECRET) {
     return NextResponse.json(
@@ -47,8 +77,17 @@ export async function POST(request: NextRequest) {
   const isFirstDelivery = await logStripeEventOnce(event.id);
 
   if (!isFirstDelivery) {
+    console.info("Stripe webhook replay ignored", {
+      eventType: event.type,
+      eventId: event.id,
+    });
     return NextResponse.json({ received: true });
   }
+
+  console.info("Stripe webhook received", {
+    eventType: event.type,
+    eventId: event.id,
+  });
 
   try {
     switch (event.type) {
@@ -73,9 +112,7 @@ export async function POST(request: NextRequest) {
         if (subscriptionId) {
           const subscription =
             await stripe.subscriptions.retrieve(subscriptionId);
-          if (subscription.current_period_end) {
-            proExpiresAt = new Date(subscription.current_period_end * 1000);
-          }
+          proExpiresAt = getSubscriptionPeriodEnd(subscription);
         }
 
         if (userId) {
@@ -105,14 +142,27 @@ export async function POST(request: NextRequest) {
             : subscriptionCustomer.id;
         const userId = subscription.metadata?.userId as string | undefined;
 
-        const proExpiresAt = subscription.current_period_end
-          ? new Date(subscription.current_period_end * 1000)
-          : null;
+        const proExpiresAt = getSubscriptionPeriodEnd(subscription);
 
-        if (
+        const isImmediateCancellation =
           subscription.status === "canceled" &&
-          !subscription.cancel_at_period_end
-        ) {
+          !subscription.cancel_at_period_end;
+
+        const isDowngraded =
+          isImmediateCancellation ||
+          SUBSCRIPTION_FREE_STATUSES.has(subscription.status);
+
+        const shouldUpgrade = SUBSCRIPTION_ACTIVE_STATUSES.has(
+          subscription.status
+        );
+
+        if (isDowngraded) {
+          console.info("Stripe subscription downgraded", {
+            eventId: event.id,
+            subscriptionId: subscription.id,
+            status: subscription.status,
+          });
+
           if (userId) {
             await upsertStripeDetails(userId, {
               tier: "free",
@@ -126,18 +176,26 @@ export async function POST(request: NextRequest) {
               proExpiresAt: null,
             });
           }
-        } else if (userId) {
-          await upsertStripeDetails(userId, {
-            tier: "pro",
-            stripeSubscriptionId: subscription.id,
-            proExpiresAt,
-          });
         } else {
-          await updateByCustomerId(customerId, {
-            tier: "pro",
-            stripeSubscriptionId: subscription.id,
-            proExpiresAt,
+          console.info("Stripe subscription status update", {
+            eventId: event.id,
+            subscriptionId: subscription.id,
+            status: subscription.status,
           });
+
+          if (userId) {
+            await upsertStripeDetails(userId, {
+              tier: shouldUpgrade ? "pro" : undefined,
+              stripeSubscriptionId: subscription.id,
+              proExpiresAt,
+            });
+          } else {
+            await updateByCustomerId(customerId, {
+              tier: shouldUpgrade ? "pro" : undefined,
+              stripeSubscriptionId: subscription.id,
+              proExpiresAt,
+            });
+          }
         }
 
         break;
@@ -166,19 +224,34 @@ export async function POST(request: NextRequest) {
           });
         }
 
+        console.info("Stripe subscription deleted; user downgraded", {
+          eventId: event.id,
+          subscriptionId: subscription.id,
+        });
+
         break;
       }
 
       case "invoice.paid":
       case "invoice.payment_failed":
-        // Optional: add logging or alerting here
+        console.info("Stripe invoice event received", {
+          eventType: event.type,
+          eventId: event.id,
+        });
         break;
 
       default:
+        console.debug("Unhandled Stripe event type received", {
+          eventType: event.type,
+          eventId: event.id,
+        });
         break;
     }
   } catch (error: any) {
-    console.error("Stripe webhook processing error", error);
+    console.error("Stripe webhook processing error", error, {
+      eventType: event.type,
+      eventId: event.id,
+    });
     return NextResponse.json(
       { error: "Failed to process Stripe webhook event" },
       { status: 500 }

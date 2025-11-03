@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/app/(auth)/auth";
+import { FREE_LIFETIME_MESSAGE_LIMIT } from "@/lib/billing/config";
 import { getUserById } from "@/lib/db/queries";
 import { ChatSDKError } from "@/lib/errors";
-import { FREE_LIFETIME_MESSAGE_LIMIT } from "@/lib/billing/config";
 
 export async function GET() {
   const session = await auth();
@@ -18,10 +18,11 @@ export async function GET() {
   }
 
   const now = new Date();
+  const hasActiveSubscription = Boolean(dbUser.stripeSubscriptionId);
+  const hasValidExpiry =
+    !dbUser.proExpiresAt || dbUser.proExpiresAt.getTime() > now.getTime();
   const isPro =
-    dbUser.tier === "pro" &&
-    dbUser.proExpiresAt !== null &&
-    dbUser.proExpiresAt.getTime() > now.getTime();
+    dbUser.tier === "pro" && hasActiveSubscription && hasValidExpiry;
 
   const limit = isPro ? null : FREE_LIFETIME_MESSAGE_LIMIT;
   const used = dbUser.messagesSentCount;
