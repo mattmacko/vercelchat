@@ -7,10 +7,7 @@ type Entitlements = {
   availableChatModelIds: ChatModel["id"][];
 };
 
-const defaultChatModels: ChatModel["id"][] = [
-  "chat-model",
-  "chat-model-reasoning",
-];
+const defaultChatModels: ChatModel["id"][] = ["mistral/mistral-medium"];
 
 export const entitlementsByUserType: Record<UserType, Entitlements> = {
   /*

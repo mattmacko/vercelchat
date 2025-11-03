@@ -36,7 +36,9 @@ function getSubscriptionPeriodEnd(subscription: Stripe.Subscription) {
       continue;
     }
     latestPeriodEnd =
-      latestPeriodEnd === null ? periodEnd : Math.max(latestPeriodEnd, periodEnd);
+      latestPeriodEnd === null
+        ? periodEnd
+        : Math.max(latestPeriodEnd, periodEnd);
   }
 
   return latestPeriodEnd ? new Date(latestPeriodEnd * 1000) : null;

@@ -38,7 +38,9 @@ export function ModelSelector({
     () =>
       availableChatModels.find(
         (chatModel) => chatModel.id === optimisticModelId
-      ),
+      ) ??
+      availableChatModels[0] ??
+      chatModels[0],
     [optimisticModelId, availableChatModels]
   );
 
@@ -56,7 +58,7 @@ export function ModelSelector({
           data-testid="model-selector"
           variant="outline"
         >
-          {selectedChatModel?.name}
+          {selectedChatModel?.name ?? ""}
           <ChevronDownIcon />
         </Button>
       </DropdownMenuTrigger>
