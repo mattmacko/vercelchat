@@ -1,4 +1,4 @@
-import type { InferSelectModel } from "drizzle-orm";
+import { sql, type InferSelectModel } from "drizzle-orm";
 import {
   boolean,
   foreignKey,
@@ -10,6 +10,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
@@ -29,6 +30,12 @@ export const user = pgTable(
   },
   (table) => ({
     tierIdx: index("User_tier_idx").on(table.tier),
+    stripeCustomerUnique: uniqueIndex("User_stripeCustomerId_unique")
+      .on(table.stripeCustomerId)
+      .where(sql`${table.stripeCustomerId} is not null`),
+    stripeSubscriptionUnique: uniqueIndex("User_stripeSubscriptionId_unique")
+      .on(table.stripeSubscriptionId)
+      .where(sql`${table.stripeSubscriptionId} is not null`),
   })
 );
 

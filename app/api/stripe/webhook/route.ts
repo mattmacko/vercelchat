@@ -16,14 +16,56 @@ const SUBSCRIPTION_ACTIVE_STATUSES = new Set<Stripe.Subscription.Status>([
   "active",
   "trialing",
   "past_due",
+  "unpaid",
 ]);
 
 const SUBSCRIPTION_FREE_STATUSES = new Set<Stripe.Subscription.Status>([
   "canceled",
   "incomplete",
   "incomplete_expired",
-  "unpaid",
 ]);
+
+async function cancelOtherActiveSubscriptions({
+  stripe,
+  customerId,
+  keepSubscriptionId,
+}: {
+  stripe: ReturnType<typeof getStripe>;
+  customerId: string;
+  keepSubscriptionId: string;
+}) {
+  try {
+    const subscriptions = await stripe.subscriptions.list({
+      customer: customerId,
+      status: "all",
+      limit: 20,
+    });
+
+    const duplicates = subscriptions.data.filter(
+      subscription =>
+        subscription.id !== keepSubscriptionId &&
+        SUBSCRIPTION_ACTIVE_STATUSES.has(subscription.status)
+    );
+
+    await Promise.all(
+      duplicates.map(subscription =>
+        stripe.subscriptions
+          .update(subscription.id, { cancel_at_period_end: true })
+          .catch(error => {
+            console.error("Failed to cancel duplicate subscription", error, {
+              subscriptionId: subscription.id,
+              customerId,
+            });
+          })
+      )
+    );
+  } catch (error) {
+    console.error("Stripe subscription dedupe failed", error, {
+      customerId,
+      keepSubscriptionId,
+    });
+  }
+}
 
 function getSubscriptionPeriodEnd(subscription: Stripe.Subscription) {
   const items = subscription.items?.data ?? [];
@@ -132,6 +174,53 @@ export async function POST(request: NextRequest) {
           });
         }
 
+        if (customerId && subscriptionId) {
+          await cancelOtherActiveSubscriptions({
+            stripe,
+            customerId,
+            keepSubscriptionId: subscriptionId,
+          });
+        }
+
+        break;
+      }
+
+      case "customer.subscription.created": {
+        const subscription = event.data.object as Stripe.Subscription;
+        const subscriptionCustomer = subscription.customer;
+        const customerId =
+          typeof subscriptionCustomer === "string"
+            ? subscriptionCustomer
+            : subscriptionCustomer.id;
+        const userId = subscription.metadata?.userId as string | undefined;
+        const proExpiresAt = getSubscriptionPeriodEnd(subscription);
+        const shouldUpgrade = SUBSCRIPTION_ACTIVE_STATUSES.has(
+          subscription.status
+        );
+
+        if (shouldUpgrade) {
+          await cancelOtherActiveSubscriptions({
+            stripe,
+            customerId,
+            keepSubscriptionId: subscription.id,
+          });
+        }
+
+        if (userId) {
+          await upsertStripeDetails(userId, {
+            tier: shouldUpgrade ? "pro" : undefined,
+            stripeCustomerId: customerId,
+            stripeSubscriptionId: subscription.id,
+            proExpiresAt,
+          });
+        } else {
+          await updateByCustomerId(customerId, {
+            tier: shouldUpgrade ? "pro" : undefined,
+            stripeSubscriptionId: subscription.id,
+            proExpiresAt,
+          });
+        }
+
         break;
       }
 
@@ -188,6 +277,7 @@ export async function POST(request: NextRequest) {
           if (userId) {
             await upsertStripeDetails(userId, {
               tier: shouldUpgrade ? "pro" : undefined,
+              stripeCustomerId: customerId,
               stripeSubscriptionId: subscription.id,
               proExpiresAt,
             });
@@ -196,6 +286,14 @@ export async function POST(request: NextRequest) {
               tier: shouldUpgrade ? "pro" : undefined,
               stripeSubscriptionId: subscription.id,
               proExpiresAt,
+            });
+          }
+
+          if (shouldUpgrade) {
+            await cancelOtherActiveSubscriptions({
+              stripe,
+              customerId,
+              keepSubscriptionId: subscription.id,
             });
           }
         }

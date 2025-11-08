@@ -2,10 +2,18 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { type NextRequest, NextResponse } from "next/server";
+import type Stripe from "stripe";
 import { auth } from "@/app/(auth)/auth";
 import { getUserById, setStripeCustomerId } from "@/lib/db/queries";
 import { ChatSDKError } from "@/lib/errors";
 import { getStripe } from "@/lib/stripe/client";
+
+const ACTIVE_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>([
+  "active",
+  "trialing",
+  "past_due",
+  "unpaid",
+]);
 
 async function resolvePriceId(stripe: ReturnType<typeof getStripe>) {
   const lookupKey = process.env.STRIPE_PRICE_LOOKUP_KEY_PRO;
@@ -32,6 +40,55 @@ async function resolvePriceId(stripe: ReturnType<typeof getStripe>) {
   return priceId;
 }
 
+async function findActiveSubscription(
+  stripe: ReturnType<typeof getStripe>,
+  identifiers: {
+    stripeSubscriptionId?: string | null;
+    stripeCustomerId?: string | null;
+  }
+) {
+  if (identifiers.stripeSubscriptionId) {
+    try {
+      const subscription = await stripe.subscriptions.retrieve(
+        identifiers.stripeSubscriptionId
+      );
+
+      if (ACTIVE_SUBSCRIPTION_STATUSES.has(subscription.status)) {
+        return subscription;
+      }
+    } catch (error: any) {
+      if (error?.code !== "resource_missing") {
+        console.error("Stripe subscription lookup failed", error, {
+          stripeSubscriptionId: identifiers.stripeSubscriptionId,
+        });
+      }
+    }
+  }
+
+  if (!identifiers.stripeCustomerId) {
+    return null;
+  }
+
+  try {
+    const subscriptions = await stripe.subscriptions.list({
+      customer: identifiers.stripeCustomerId,
+      status: "all",
+      limit: 10,
+    });
+
+    return (
+      subscriptions.data.find(sub =>
+        ACTIVE_SUBSCRIPTION_STATUSES.has(sub.status)
+      ) ?? null
+    );
+  } catch (error) {
+    console.error("Stripe subscription list failed", error, {
+      stripeCustomerId: identifiers.stripeCustomerId,
+    });
+    return null;
+  }
+}
+
 export async function POST(request: NextRequest) {
   const session = await auth();
 
@@ -45,15 +102,35 @@ export async function POST(request: NextRequest) {
     return new ChatSDKError("unauthorized:api").toResponse();
   }
 
+  const stripe = getStripe();
+  const origin = process.env.APP_URL ?? request.nextUrl.origin;
+  const portalPath =
+    process.env.NEXT_PUBLIC_STRIPE_PORTAL_URL ?? "/billing/manage";
+  const manageUrl = /^https?:\/\//.test(portalPath)
+    ? portalPath
+    : `${origin}${
+        portalPath.startsWith("/") ? portalPath : `/${portalPath}`
+      }`;
+
   if (
     dbUser.tier === "pro" &&
     dbUser.proExpiresAt &&
     dbUser.proExpiresAt > new Date()
   ) {
-    return NextResponse.json({ message: "Already on the Pro plan." });
+    return NextResponse.json({
+      message: "Already on the Pro plan.",
+      url: manageUrl,
+    });
   }
 
-  const stripe = getStripe();
+  const existingSubscription = await findActiveSubscription(stripe, {
+    stripeSubscriptionId: dbUser.stripeSubscriptionId,
+    stripeCustomerId: dbUser.stripeCustomerId,
+  });
+
+  if (existingSubscription) {
+    return NextResponse.json({ url: manageUrl });
+  }
 
   let customerId = dbUser.stripeCustomerId ?? null;
 
@@ -72,12 +149,18 @@ export async function POST(request: NextRequest) {
     }
 
     const priceId = await resolvePriceId(stripe);
-    const origin = process.env.APP_URL ?? request.nextUrl.origin;
+    const headerIdempotencyKey =
+      request.headers.get("x-idempotency-key") ??
+      request.headers.get("x-stripe-idempotency-key");
+    const idempotencyKey =
+      headerIdempotencyKey ??
+      `checkout:${session.user.id}:${priceId}:${Date.now().toString(36)}`;
 
     const checkoutSession = await stripe.checkout.sessions.create(
       {
         mode: "subscription",
         customer: customerId,
+        client_reference_id: session.user.id,
         success_url: `${origin}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${origin}/billing/cancel`,
         line_items: [{ price: priceId, quantity: 1 }],
@@ -89,7 +172,7 @@ export async function POST(request: NextRequest) {
           metadata: { userId: session.user.id },
         },
       },
-      { idempotencyKey: `checkout:${session.user.id}:${Date.now()}` }
+      { idempotencyKey }
     );
 
     if (!checkoutSession.url) {

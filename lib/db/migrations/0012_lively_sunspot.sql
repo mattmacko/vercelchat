@@ -1,0 +1,2 @@
+CREATE UNIQUE INDEX IF NOT EXISTS "User_stripeCustomerId_unique" ON "User" USING btree ("stripeCustomerId") WHERE "User"."stripeCustomerId" is not null;--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "User_stripeSubscriptionId_unique" ON "User" USING btree ("stripeSubscriptionId") WHERE "User"."stripeSubscriptionId" is not null;
