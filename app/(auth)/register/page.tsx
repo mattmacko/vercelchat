@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useActionState, useEffect, useState } from "react";
 import { AuthForm } from "@/components/auth-form";
@@ -11,6 +11,8 @@ import { type RegisterActionState, register } from "../actions";
 
 export default function Page() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextParam = searchParams?.get("next") ?? null;
 
   const [email, setEmail] = useState("");
   const [isSuccessful, setIsSuccessful] = useState(false);
@@ -39,7 +41,16 @@ export default function Page() {
 
       setIsSuccessful(true);
       updateSession();
-      router.refresh();
+      // If a next param is provided, redirect there after successful signup
+      const safeNext =
+        nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//")
+          ? nextParam
+          : null;
+      if (safeNext) {
+        router.replace(safeNext);
+      } else {
+        router.replace("/");
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.status]);
@@ -64,7 +75,7 @@ export default function Page() {
             {"Already have an account? "}
             <Link
               className="font-semibold text-gray-800 hover:underline dark:text-zinc-200"
-              href="/login"
+              href={nextParam ? `/login?next=${encodeURIComponent(nextParam)}` : "/login"}
             >
               Sign in
             </Link>

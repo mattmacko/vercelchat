@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,7 +15,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PRO_PLAN } from "@/lib/billing/config";
 import { useBillingLimits } from "@/hooks/use-billing";
-import { redirectToCheckout } from "@/lib/billing/client";
+import { guestRegex } from "@/lib/constants";
+import { toast } from "@/components/toast";
 
 export function UpgradeOverlay({
   open,
@@ -25,6 +28,8 @@ export function UpgradeOverlay({
   const { data, mutate } = useBillingLimits();
   const numericLimit =
     typeof data?.limit === "number" ? data.limit : null;
+  const { data: session, status } = useSession();
+  const router = useRouter();
 
   useEffect(() => {
     if (open) {
@@ -70,7 +75,23 @@ export function UpgradeOverlay({
           <AlertDialogAction
             className="w-full sm:w-auto"
             onClick={() => {
-              void redirectToCheckout();
+              if (status === "loading") {
+                toast({
+                  type: "error",
+                  description:
+                    "Checking authentication status, please try again!",
+                });
+                return;
+              }
+
+              const isGuest = guestRegex.test(session?.user?.email ?? "");
+
+              if (isGuest) {
+                router.push("/register?next=/billing/upgrade");
+                return;
+              }
+
+              router.push("/billing/upgrade");
             }}
           >
             Upgrade now
