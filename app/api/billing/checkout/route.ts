@@ -15,6 +15,8 @@ const ACTIVE_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>([
   "unpaid",
 ]);
 
+const HTTP_URL_REGEX = /^https?:\/\//;
+
 async function resolvePriceId(stripe: ReturnType<typeof getStripe>) {
   const lookupKey = process.env.STRIPE_PRICE_LOOKUP_KEY_PRO;
 
@@ -106,7 +108,7 @@ export async function POST(request: NextRequest) {
   const origin = process.env.APP_URL ?? request.nextUrl.origin;
   const portalPath =
     process.env.NEXT_PUBLIC_STRIPE_PORTAL_URL ?? "/billing/manage";
-  const manageUrl = /^https?:\/\//.test(portalPath)
+  const manageUrl = HTTP_URL_REGEX.test(portalPath)
     ? portalPath
     : `${origin}${
         portalPath.startsWith("/") ? portalPath : `/${portalPath}`
