@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useActionState, useEffect, useState } from "react";
+import { Suspense, useActionState, useEffect, useState } from "react";
 
 import { AuthForm } from "@/components/auth-form";
 import { SubmitButton } from "@/components/submit-button";
@@ -13,7 +13,7 @@ import { type LoginActionState, login } from "../actions";
 const isSafeNextParam = (value: string | null): value is string =>
   typeof value === "string" && value.startsWith("/") && !value.startsWith("//");
 
-export default function Page() {
+function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextParam = searchParams?.get("next") ?? null;
@@ -87,5 +87,13 @@ export default function Page() {
         </AuthForm>
       </div>
     </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageContent />
+    </Suspense>
   );
 }
