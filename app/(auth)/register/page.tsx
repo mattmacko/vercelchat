@@ -9,6 +9,9 @@ import { SubmitButton } from "@/components/submit-button";
 import { toast } from "@/components/toast";
 import { type RegisterActionState, register } from "../actions";
 
+const isSafeNextParam = (value: string | null): value is string =>
+  typeof value === "string" && value.startsWith("/") && !value.startsWith("//");
+
 export default function Page() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -42,18 +45,14 @@ export default function Page() {
       setIsSuccessful(true);
       updateSession();
       // If a next param is provided, redirect there after successful signup
-      const safeNext =
-        nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//")
-          ? nextParam
-          : null;
+      const safeNext = isSafeNextParam(nextParam) ? nextParam : null;
       if (safeNext) {
         router.replace(safeNext);
       } else {
         router.replace("/");
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.status]);
+  }, [nextParam, router, state.status, updateSession]);
 
   const handleSubmit = (formData: FormData) => {
     setEmail(formData.get("email") as string);
@@ -75,7 +74,11 @@ export default function Page() {
             {"Already have an account? "}
             <Link
               className="font-semibold text-gray-800 hover:underline dark:text-zinc-200"
-              href={nextParam ? `/login?next=${encodeURIComponent(nextParam)}` : "/login"}
+              href={
+                nextParam
+                  ? `/login?next=${encodeURIComponent(nextParam)}`
+                  : "/login"
+              }
             >
               Sign in
             </Link>

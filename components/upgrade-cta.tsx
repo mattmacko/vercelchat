@@ -1,21 +1,17 @@
 "use client";
 
-import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Button } from "@/components/ui/button";
+import { useMemo } from "react";
+import { toast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { useBillingLimits } from "@/hooks/use-billing";
 import { openBillingPortal } from "@/lib/billing/client";
 import { guestRegex } from "@/lib/constants";
-import { toast } from "@/components/toast";
+import { cn } from "@/lib/utils";
 
-export function UpgradeCta({
-  className,
-}: {
-  className?: string;
-}) {
+export function UpgradeCta({ className }: { className?: string }) {
   const { data, isLoading } = useBillingLimits();
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -51,7 +47,13 @@ export function UpgradeCta({
         <Button
           className="h-8 md:h-fit md:px-3"
           onClick={() => {
-            void openBillingPortal();
+            openBillingPortal().catch((error) => {
+              console.error("Failed to open billing portal", error);
+              toast({
+                type: "error",
+                description: "Unable to open billing portal. Try again soon.",
+              });
+            });
           }}
           size="sm"
           variant="outline"

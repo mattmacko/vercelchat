@@ -6,10 +6,11 @@ import {
   desc,
   eq,
   gt,
+  gte,
   inArray,
   lt,
-  sql,
   type SQL,
+  sql,
 } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -24,9 +25,9 @@ import {
   type DBMessage,
   document,
   message,
-  stripeEventLog,
   type Suggestion,
   stream,
+  stripeEventLog,
   suggestion,
   type User,
   user,
@@ -139,10 +140,7 @@ export async function getUserById(id: string) {
     const [result] = await db.select().from(user).where(eq(user.id, id));
     return result ?? null;
   } catch (_error) {
-    throw new ChatSDKError(
-      "bad_request:database",
-      "Failed to get user by id"
-    );
+    throw new ChatSDKError("bad_request:database", "Failed to get user by id");
   }
 }
 
@@ -332,7 +330,7 @@ export async function deleteAllChatsByUserId({ userId }: { userId: string }) {
       return { deletedCount: 0 };
     }
 
-    const chatIds = userChats.map(c => c.id);
+    const chatIds = userChats.map((c) => c.id);
 
     await db.delete(vote).where(inArray(vote.chatId, chatIds));
     await db.delete(message).where(inArray(message.chatId, chatIds));
@@ -718,7 +716,6 @@ export async function updateChatLastContextById({
     return;
   }
 }
-
 
 export async function createStreamId({
   streamId,

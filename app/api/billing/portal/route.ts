@@ -1,12 +1,9 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { auth } from "@/app/(auth)/auth";
-import {
-  getUserById,
-  setStripeCustomerId,
-} from "@/lib/db/queries";
+import { getUserById, setStripeCustomerId } from "@/lib/db/queries";
 import { ChatSDKError } from "@/lib/errors";
 import { getStripe } from "@/lib/stripe/client";
 

@@ -79,7 +79,7 @@ async function findActiveSubscription(
     });
 
     return (
-      subscriptions.data.find(sub =>
+      subscriptions.data.find((sub) =>
         ACTIVE_SUBSCRIPTION_STATUSES.has(sub.status)
       ) ?? null
     );
@@ -110,9 +110,7 @@ export async function POST(request: NextRequest) {
     process.env.NEXT_PUBLIC_STRIPE_PORTAL_URL ?? "/billing/manage";
   const manageUrl = HTTP_URL_REGEX.test(portalPath)
     ? portalPath
-    : `${origin}${
-        portalPath.startsWith("/") ? portalPath : `/${portalPath}`
-      }`;
+    : `${origin}${portalPath.startsWith("/") ? portalPath : `/${portalPath}`}`;
 
   if (
     dbUser.tier === "pro" &&

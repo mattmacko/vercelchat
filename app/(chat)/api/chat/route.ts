@@ -31,9 +31,9 @@ import {
   createStreamId,
   deleteChatById,
   getChatById,
+  getMessagesByChatId,
   getUserById,
   incrementUserMessagesSentCount,
-  getMessagesByChatId,
   saveChat,
   saveMessages,
   updateChatLastContextById,
@@ -125,10 +125,11 @@ export async function POST(request: Request) {
 
     const { maxLifetimeMessages } = entitlementsByUserType[userType];
 
-    if (maxLifetimeMessages !== null) {
-      if (dbUser.messagesSentCount >= maxLifetimeMessages) {
-        return new ChatSDKError("rate_limit:chat").toResponse();
-      }
+    if (
+      maxLifetimeMessages !== null &&
+      dbUser.messagesSentCount >= maxLifetimeMessages
+    ) {
+      return new ChatSDKError("rate_limit:chat").toResponse();
     }
 
     const chat = await getChatById({ id });

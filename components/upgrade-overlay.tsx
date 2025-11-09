@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { useEffect } from "react";
+import { toast } from "@/components/toast";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,10 +14,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { PRO_PLAN } from "@/lib/billing/config";
 import { useBillingLimits } from "@/hooks/use-billing";
+import { PRO_PLAN } from "@/lib/billing/config";
 import { guestRegex } from "@/lib/constants";
-import { toast } from "@/components/toast";
 
 export function UpgradeOverlay({
   open,
@@ -26,16 +26,19 @@ export function UpgradeOverlay({
   onOpenChange: (open: boolean) => void;
 }) {
   const { data, mutate } = useBillingLimits();
-  const numericLimit =
-    typeof data?.limit === "number" ? data.limit : null;
+  const numericLimit = typeof data?.limit === "number" ? data.limit : null;
   const { data: session, status } = useSession();
   const router = useRouter();
 
   useEffect(() => {
-    if (open) {
-      void mutate();
+    if (!open) {
+      return;
     }
-  }, [open, mutate]);
+
+    mutate().catch((error) => {
+      console.error("Failed to refresh billing limits", error);
+    });
+  }, [mutate, open]);
 
   return (
     <AlertDialog onOpenChange={onOpenChange} open={open}>
@@ -48,9 +51,9 @@ export function UpgradeOverlay({
             <div className="text-muted-foreground">
               You&apos;ve used all available messages on the free plan.
             </div>
-            <div className="flex items-baseline gap-2 text-3xl font-semibold">
+            <div className="flex items-baseline gap-2 font-semibold text-3xl">
               {PRO_PLAN.price}
-              <span className="text-muted-foreground text-sm font-normal">
+              <span className="font-normal text-muted-foreground text-sm">
                 per {PRO_PLAN.interval}
               </span>
             </div>

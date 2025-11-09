@@ -42,16 +42,16 @@ async function cancelOtherActiveSubscriptions({
     });
 
     const duplicates = subscriptions.data.filter(
-      subscription =>
+      (subscription) =>
         subscription.id !== keepSubscriptionId &&
         SUBSCRIPTION_ACTIVE_STATUSES.has(subscription.status)
     );
 
     await Promise.all(
-      duplicates.map(subscription =>
+      duplicates.map((subscription) =>
         stripe.subscriptions
           .update(subscription.id, { cancel_at_period_end: true })
-          .catch(error => {
+          .catch((error) => {
             console.error("Failed to cancel duplicate subscription", error, {
               subscriptionId: subscription.id,
               customerId,

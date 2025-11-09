@@ -10,7 +10,7 @@ import { useSidebar } from "./ui/sidebar";
 import { UpgradeCta } from "./upgrade-cta";
 
 function PureChatHeader({
-  chatId,
+  chatId: _chatId,
   isReadonly,
 }: {
   chatId: string;

@@ -4,11 +4,7 @@ import { isTestEnvironment } from "../constants";
 
 export const myProvider = isTestEnvironment
   ? (() => {
-      const {
-        artifactModel,
-        chatModel,
-        titleModel,
-      } = require("./models.mock");
+      const { artifactModel, chatModel, titleModel } = require("./models.mock");
       return customProvider({
         languageModels: {
           "mistral/mistral-medium": chatModel,

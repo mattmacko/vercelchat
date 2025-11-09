@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import { toast } from "@/components/toast";
 
@@ -36,7 +36,8 @@ export async function redirectToCheckout() {
   } catch (error: any) {
     toast({
       type: "error",
-      description: error?.message ?? "Failed to start checkout. Please try again.",
+      description:
+        error?.message ?? "Failed to start checkout. Please try again.",
     });
   }
 }
@@ -48,7 +49,8 @@ export async function openBillingPortal() {
   } catch (error: any) {
     toast({
       type: "error",
-      description: error?.message ?? "Failed to open billing portal. Please try again.",
+      description:
+        error?.message ?? "Failed to open billing portal. Please try again.",
     });
   }
 }

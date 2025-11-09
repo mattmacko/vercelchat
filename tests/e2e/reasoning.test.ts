@@ -1,6 +1,15 @@
 import { expect, test } from "../fixtures";
 import { ChatPage } from "../pages/chat";
 
+function expectDefined<T>(
+  value: T | null | undefined,
+  entity = "value"
+): asserts value is NonNullable<T> {
+  if (value == null) {
+    throw new Error(`Expected ${entity} to be defined`);
+  }
+}
+
 test.describe("chat activity without reasoning", () => {
   let chatPage: ChatPage;
 
@@ -14,6 +23,7 @@ test.describe("chat activity without reasoning", () => {
     await chatPage.isGenerationComplete();
 
     const assistantMessage = await chatPage.getRecentAssistantMessage();
+    expectDefined(assistantMessage, "assistant message");
     expect(assistantMessage.content).toBe("It's just blue duh!");
     expect(assistantMessage.reasoning).toBeNull();
     await expect(
@@ -26,6 +36,7 @@ test.describe("chat activity without reasoning", () => {
     await chatPage.isGenerationComplete();
 
     const assistantMessage = await chatPage.getRecentAssistantMessage();
+    expectDefined(assistantMessage, "assistant message");
     await expect(
       assistantMessage.element.getByTestId("message-reasoning")
     ).not.toBeVisible();
@@ -39,6 +50,7 @@ test.describe("chat activity without reasoning", () => {
     await chatPage.isGenerationComplete();
 
     const assistantMessage = await chatPage.getRecentAssistantMessage();
+    expectDefined(assistantMessage, "assistant message");
     await expect(
       assistantMessage.element.getByTestId("message-reasoning")
     ).not.toBeVisible();
@@ -49,6 +61,7 @@ test.describe("chat activity without reasoning", () => {
     await chatPage.isGenerationComplete();
 
     const updatedAssistantMessage = await chatPage.getRecentAssistantMessage();
+    expectDefined(updatedAssistantMessage, "updated assistant message");
 
     expect(updatedAssistantMessage.content).toBe("It's just green duh!");
     expect(updatedAssistantMessage.reasoning).toBeNull();

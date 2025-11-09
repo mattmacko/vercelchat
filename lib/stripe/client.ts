@@ -13,9 +13,7 @@ export function getStripe() {
     throw new Error("STRIPE_SECRET_KEY is not defined");
   }
 
-  stripeInstance = new Stripe(secretKey, {
-    apiVersion: "2024-06-20",
-  });
+  stripeInstance = new Stripe(secretKey);
 
   return stripeInstance;
 }
