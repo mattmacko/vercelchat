@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Suspense, useActionState, useEffect, useState } from "react";
+import { Suspense, useActionState, useEffect, useRef, useState } from "react";
 import { AuthForm } from "@/components/auth-form";
 import { SubmitButton } from "@/components/submit-button";
 import { toast } from "@/components/toast";
@@ -19,6 +19,7 @@ function RegisterPageContent() {
 
   const [email, setEmail] = useState("");
   const [isSuccessful, setIsSuccessful] = useState(false);
+  const hasHandledSuccess = useRef(false);
 
   const [state, formAction] = useActionState<RegisterActionState, FormData>(
     register,
@@ -40,6 +41,11 @@ function RegisterPageContent() {
         description: "Failed validating your submission!",
       });
     } else if (state.status === "success") {
+      if (hasHandledSuccess.current) {
+        return;
+      }
+
+      hasHandledSuccess.current = true;
       toast({ type: "success", description: "Account created successfully!" });
 
       setIsSuccessful(true);
