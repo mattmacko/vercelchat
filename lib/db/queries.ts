@@ -17,6 +17,7 @@ import postgres from "postgres";
 import type { ArtifactKind } from "@/components/artifact";
 import type { VisibilityType } from "@/components/visibility-selector";
 import { ChatSDKError } from "../errors";
+import { logError, logInfo, maskEmail } from "../logging";
 import type { AppUsage } from "../usage";
 import { generateUUID } from "../utils";
 import {
@@ -105,6 +106,87 @@ export async function createGuestUser() {
   }
 }
 
+export async function convertGuestUserToRegistered({
+  userId,
+  currentEmail,
+  nextEmail,
+  password,
+}: {
+  userId: string;
+  currentEmail: string;
+  nextEmail: string;
+  password: string;
+}) {
+  const hashedPassword = generateHashedPassword(password);
+
+  try {
+    logInfo("db:convertGuestUser", "Updating guest user record", {
+      userId,
+      currentEmail: maskEmail(currentEmail),
+      nextEmail: maskEmail(nextEmail),
+    });
+
+    const [updatedUser] = await db
+      .update(user)
+      .set({
+        email: nextEmail,
+        password: hashedPassword,
+      })
+      .where(and(eq(user.id, userId), eq(user.email, currentEmail)))
+      .returning({
+        id: user.id,
+        email: user.email,
+        tier: user.tier,
+        stripeCustomerId: user.stripeCustomerId,
+        stripeSubscriptionId: user.stripeSubscriptionId,
+        proExpiresAt: user.proExpiresAt,
+        messagesSentCount: user.messagesSentCount,
+      });
+
+    if (!updatedUser) {
+      logError("db:convertGuestUser", "No user row updated during conversion", {
+        userId,
+        currentEmail: maskEmail(currentEmail),
+        nextEmail: maskEmail(nextEmail),
+      });
+      throw new ChatSDKError(
+        "bad_request:auth",
+        "Guest session could not be converted."
+      );
+    }
+
+    logInfo("db:convertGuestUser", "Guest user conversion complete", {
+      userId: updatedUser.id,
+      newEmail: maskEmail(updatedUser.email),
+      stripeSubscriptionId: updatedUser.stripeSubscriptionId,
+    });
+
+    return updatedUser;
+  } catch (error) {
+    if (error instanceof ChatSDKError) {
+      logError("db:convertGuestUser", "Conversion failed with ChatSDKError", {
+        userId,
+        currentEmail: maskEmail(currentEmail),
+        nextEmail: maskEmail(nextEmail),
+        error,
+      });
+      throw error;
+    }
+
+    logError("db:convertGuestUser", "Conversion failed with database error", {
+      userId,
+      currentEmail: maskEmail(currentEmail),
+      nextEmail: maskEmail(nextEmail),
+      error,
+    });
+
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to convert guest user"
+    );
+  }
+}
+
 export async function upgradeUserToPro(userId: string) {
   try {
     return await db
@@ -151,7 +233,11 @@ export async function setStripeCustomerId(userId: string, customerId: string) {
       .set({ stripeCustomerId: customerId })
       .where(eq(user.id, userId));
   } catch (_error) {
-    console.error("setStripeCustomerId error", _error, { userId, customerId });
+    logError("db:setStripeCustomerId", "Failed to set Stripe customer id", {
+      userId,
+      customerId,
+      error: _error,
+    });
     throw new ChatSDKError(
       "bad_request:database",
       "Failed to set Stripe customer id"
@@ -193,7 +279,11 @@ export async function upsertStripeDetails(
   try {
     await db.update(user).set(updateData).where(eq(user.id, userId));
   } catch (_error) {
-    console.error("upsertStripeDetails error", _error, { userId, updateData });
+    logError("db:upsertStripeDetails", "Failed to update Stripe details", {
+      userId,
+      updateData,
+      error: _error,
+    });
     throw new ChatSDKError(
       "bad_request:database",
       "Failed to update Stripe details"
@@ -233,9 +323,10 @@ export async function updateByCustomerId(
       .set(updateData)
       .where(eq(user.stripeCustomerId, customerId));
   } catch (_error) {
-    console.error("updateByCustomerId error", _error, {
+    logError("db:updateByCustomerId", "Failed to update user by customer id", {
       customerId,
       updateData,
+      error: _error,
     });
     throw new ChatSDKError(
       "bad_request:database",

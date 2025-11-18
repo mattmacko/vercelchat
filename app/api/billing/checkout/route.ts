@@ -6,6 +6,7 @@ import type Stripe from "stripe";
 import { auth } from "@/app/(auth)/auth";
 import { getUserById, setStripeCustomerId } from "@/lib/db/queries";
 import { ChatSDKError } from "@/lib/errors";
+import { logError, logInfo, maskEmail } from "@/lib/logging";
 import { getStripe } from "@/lib/stripe/client";
 
 const ACTIVE_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>([
@@ -60,8 +61,9 @@ async function findActiveSubscription(
       }
     } catch (error: any) {
       if (error?.code !== "resource_missing") {
-        console.error("Stripe subscription lookup failed", error, {
+        logError("billing:checkout", "Stripe subscription lookup failed", {
           stripeSubscriptionId: identifiers.stripeSubscriptionId,
+          error,
         });
       }
     }
@@ -84,8 +86,9 @@ async function findActiveSubscription(
       ) ?? null
     );
   } catch (error) {
-    console.error("Stripe subscription list failed", error, {
+    logError("billing:checkout", "Stripe subscription list failed", {
       stripeCustomerId: identifiers.stripeCustomerId,
+      error,
     });
     return null;
   }
@@ -95,12 +98,34 @@ export async function POST(request: NextRequest) {
   const session = await auth();
 
   if (!session?.user?.id) {
+    logError("billing:checkout", "Missing session user during checkout", {
+      hasSession: Boolean(session),
+    });
     return new ChatSDKError("unauthorized:api").toResponse();
+  }
+
+  logInfo("billing:checkout", "Checkout request received", {
+    userId: session.user.id,
+    userType: session.user.type,
+    email: maskEmail(session.user.email),
+  });
+
+  if (session.user.type === "guest") {
+    logInfo("billing:checkout", "Blocked guest user from checkout", {
+      userId: session.user.id,
+    });
+    return new ChatSDKError(
+      "forbidden:auth",
+      "Create an account before upgrading to Pro."
+    ).toResponse();
   }
 
   const dbUser = await getUserById(session.user.id);
 
   if (!dbUser) {
+    logError("billing:checkout", "No database user found for session", {
+      userId: session.user.id,
+    });
     return new ChatSDKError("unauthorized:api").toResponse();
   }
 
@@ -117,6 +142,10 @@ export async function POST(request: NextRequest) {
     dbUser.proExpiresAt &&
     dbUser.proExpiresAt > new Date()
   ) {
+    logInfo("billing:checkout", "User already has active Pro plan", {
+      userId: session.user.id,
+      proExpiresAt: dbUser.proExpiresAt,
+    });
     return NextResponse.json({
       message: "Already on the Pro plan.",
       url: manageUrl,
@@ -129,24 +158,33 @@ export async function POST(request: NextRequest) {
   });
 
   if (existingSubscription) {
+    logInfo("billing:checkout", "Active subscription already exists", {
+      userId: session.user.id,
+      subscriptionId: existingSubscription.id,
+      status: existingSubscription.status,
+    });
     return NextResponse.json({ url: manageUrl });
   }
 
   let customerId = dbUser.stripeCustomerId ?? null;
 
   try {
-    if (!customerId) {
-      const customer = await stripe.customers.create(
-        {
-          email: session.user.email ?? undefined,
-          metadata: { userId: session.user.id },
-        },
-        { idempotencyKey: `cust:${session.user.id}` }
-      );
+      if (!customerId) {
+        const customer = await stripe.customers.create(
+          {
+            email: session.user.email ?? undefined,
+            metadata: { userId: session.user.id },
+          },
+          { idempotencyKey: `cust:${session.user.id}` }
+        );
 
-      customerId = customer.id;
-      await setStripeCustomerId(session.user.id, customerId);
-    }
+        customerId = customer.id;
+        logInfo("billing:checkout", "Created Stripe customer", {
+          userId: session.user.id,
+          customerId,
+        });
+        await setStripeCustomerId(session.user.id, customerId);
+      }
 
     const priceId = await resolvePriceId(stripe);
     const headerIdempotencyKey =
@@ -179,9 +217,19 @@ export async function POST(request: NextRequest) {
       throw new Error("Stripe Checkout session did not return a URL");
     }
 
+    logInfo("billing:checkout", "Checkout session created", {
+      userId: session.user.id,
+      sessionId: checkoutSession.id,
+      customerId,
+      priceId,
+    });
+
     return NextResponse.json({ url: checkoutSession.url });
   } catch (error: any) {
-    console.error("Stripe checkout error", error);
+    logError("billing:checkout", "Stripe checkout error", {
+      userId: session.user.id,
+      error,
+    });
     return NextResponse.json(
       { error: "Failed to create Stripe Checkout session" },
       { status: 500 }

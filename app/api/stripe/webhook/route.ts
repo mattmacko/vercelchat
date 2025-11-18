@@ -8,6 +8,7 @@ import {
   updateByCustomerId,
   upsertStripeDetails,
 } from "@/lib/db/queries";
+import { logError, logInfo } from "@/lib/logging";
 import { getStripe } from "@/lib/stripe/client";
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
@@ -52,17 +53,19 @@ async function cancelOtherActiveSubscriptions({
         stripe.subscriptions
           .update(subscription.id, { cancel_at_period_end: true })
           .catch((error) => {
-            console.error("Failed to cancel duplicate subscription", error, {
+            logError("stripe:webhook", "Failed to cancel duplicate subscription", {
               subscriptionId: subscription.id,
               customerId,
+              error,
             });
           })
       )
     );
   } catch (error) {
-    console.error("Stripe subscription dedupe failed", error, {
+    logError("stripe:webhook", "Stripe subscription dedupe failed", {
       customerId,
       keepSubscriptionId,
+      error,
     });
   }
 }
@@ -111,7 +114,9 @@ export async function POST(request: NextRequest) {
   try {
     event = stripe.webhooks.constructEvent(rawBody, signature, WEBHOOK_SECRET);
   } catch (error: any) {
-    console.error("Stripe webhook signature verification failed", error);
+    logError("stripe:webhook", "Stripe webhook signature verification failed", {
+      error,
+    });
     return NextResponse.json(
       { error: `Webhook Error: ${error.message}` },
       { status: 400 }
@@ -121,14 +126,14 @@ export async function POST(request: NextRequest) {
   const isFirstDelivery = await logStripeEventOnce(event.id);
 
   if (!isFirstDelivery) {
-    console.info("Stripe webhook replay ignored", {
+    logInfo("stripe:webhook", "Stripe webhook replay ignored", {
       eventType: event.type,
       eventId: event.id,
     });
     return NextResponse.json({ received: true });
   }
 
-  console.info("Stripe webhook received", {
+  logInfo("stripe:webhook", "Stripe webhook received", {
     eventType: event.type,
     eventId: event.id,
   });
@@ -248,7 +253,7 @@ export async function POST(request: NextRequest) {
         );
 
         if (isDowngraded) {
-          console.info("Stripe subscription downgraded", {
+          logInfo("stripe:webhook", "Stripe subscription downgraded", {
             eventId: event.id,
             subscriptionId: subscription.id,
             status: subscription.status,
@@ -268,7 +273,7 @@ export async function POST(request: NextRequest) {
             });
           }
         } else {
-          console.info("Stripe subscription status update", {
+          logInfo("stripe:webhook", "Stripe subscription status update", {
             eventId: event.id,
             subscriptionId: subscription.id,
             status: subscription.status,
@@ -324,7 +329,7 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        console.info("Stripe subscription deleted; user downgraded", {
+        logInfo("stripe:webhook", "Stripe subscription deleted; user downgraded", {
           eventId: event.id,
           subscriptionId: subscription.id,
         });
@@ -334,23 +339,24 @@ export async function POST(request: NextRequest) {
 
       case "invoice.paid":
       case "invoice.payment_failed":
-        console.info("Stripe invoice event received", {
+        logInfo("stripe:webhook", "Stripe invoice event received", {
           eventType: event.type,
           eventId: event.id,
         });
         break;
 
       default:
-        console.debug("Unhandled Stripe event type received", {
+        logInfo("stripe:webhook", "Unhandled Stripe event type received", {
           eventType: event.type,
           eventId: event.id,
         });
         break;
     }
   } catch (error: any) {
-    console.error("Stripe webhook processing error", error, {
+    logError("stripe:webhook", "Stripe webhook processing error", {
       eventType: event.type,
       eventId: event.id,
+      error,
     });
     return NextResponse.json(
       { error: "Failed to process Stripe webhook event" },
