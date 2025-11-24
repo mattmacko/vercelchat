@@ -46,7 +46,8 @@ const db = drizzle(client);
 
 export async function getUser(email: string): Promise<User[]> {
   try {
-    return await db.select().from(user).where(eq(user.email, email));
+    const normalizedEmail = email.toLowerCase();
+    return await db.select().from(user).where(eq(user.email, normalizedEmail));
   } catch (_error) {
     throw new ChatSDKError(
       "bad_request:database",
@@ -55,22 +56,50 @@ export async function getUser(email: string): Promise<User[]> {
   }
 }
 
+export async function getUserByEmail(email: string): Promise<User | null> {
+  const [result] = await getUser(email);
+  return result ?? null;
+}
+
+export async function getUserByGoogleId(
+  googleId: string
+): Promise<User | null> {
+  try {
+    const [result] = await db
+      .select()
+      .from(user)
+      .where(eq(user.googleId, googleId));
+
+    return result ?? null;
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to get user by Google id"
+    );
+  }
+}
+
 export async function createUser(email: string, password: string) {
   const hashedPassword = generateHashedPassword(password);
+  const normalizedEmail = email.toLowerCase();
 
   try {
     return await db
       .insert(user)
       .values({
-        email,
+        email: normalizedEmail,
         password: hashedPassword,
         tier: "free",
+        authProvider: "credentials",
         messagesSentCount: 0,
       })
       .returning({
         id: user.id,
         email: user.email,
         tier: user.tier,
+        authProvider: user.authProvider,
+        googleId: user.googleId,
+        emailVerifiedAt: user.emailVerifiedAt,
         stripeCustomerId: user.stripeCustomerId,
         stripeSubscriptionId: user.stripeSubscriptionId,
         proExpiresAt: user.proExpiresAt,
@@ -84,15 +113,25 @@ export async function createUser(email: string, password: string) {
 export async function createGuestUser() {
   const email = `guest-${Date.now()}`;
   const password = generateHashedPassword(generateUUID());
+  const normalizedEmail = email.toLowerCase();
 
   try {
     return await db
       .insert(user)
-      .values({ email, password, tier: "free", messagesSentCount: 0 })
+      .values({
+        email: normalizedEmail,
+        password,
+        tier: "free",
+        authProvider: "guest",
+        messagesSentCount: 0,
+      })
       .returning({
         id: user.id,
         email: user.email,
         tier: user.tier,
+        authProvider: user.authProvider,
+        googleId: user.googleId,
+        emailVerifiedAt: user.emailVerifiedAt,
         stripeCustomerId: user.stripeCustomerId,
         stripeSubscriptionId: user.stripeSubscriptionId,
         proExpiresAt: user.proExpiresAt,
@@ -118,25 +157,30 @@ export async function convertGuestUserToRegistered({
   password: string;
 }) {
   const hashedPassword = generateHashedPassword(password);
+  const normalizedEmail = nextEmail.toLowerCase();
 
   try {
     logInfo("db:convertGuestUser", "Updating guest user record", {
       userId,
       currentEmail: maskEmail(currentEmail),
-      nextEmail: maskEmail(nextEmail),
+      nextEmail: maskEmail(normalizedEmail),
     });
 
     const [updatedUser] = await db
       .update(user)
       .set({
-        email: nextEmail,
+        email: normalizedEmail,
         password: hashedPassword,
+        authProvider: "credentials",
       })
       .where(and(eq(user.id, userId), eq(user.email, currentEmail)))
       .returning({
         id: user.id,
         email: user.email,
         tier: user.tier,
+        authProvider: user.authProvider,
+        googleId: user.googleId,
+        emailVerifiedAt: user.emailVerifiedAt,
         stripeCustomerId: user.stripeCustomerId,
         stripeSubscriptionId: user.stripeSubscriptionId,
         proExpiresAt: user.proExpiresAt,
@@ -183,6 +227,179 @@ export async function convertGuestUserToRegistered({
     throw new ChatSDKError(
       "bad_request:database",
       "Failed to convert guest user"
+    );
+  }
+}
+
+export async function createOAuthUser({
+  email,
+  googleId,
+  emailVerifiedAt,
+}: {
+  email: string;
+  googleId: string;
+  emailVerifiedAt?: Date | null;
+}) {
+  const normalizedEmail = email.toLowerCase();
+
+  try {
+    return await db
+      .insert(user)
+      .values({
+        email: normalizedEmail,
+        password: null,
+        tier: "free",
+        authProvider: "google",
+        googleId,
+        emailVerifiedAt: emailVerifiedAt ?? null,
+        messagesSentCount: 0,
+      })
+      .returning({
+        id: user.id,
+        email: user.email,
+        tier: user.tier,
+        authProvider: user.authProvider,
+        googleId: user.googleId,
+        emailVerifiedAt: user.emailVerifiedAt,
+        stripeCustomerId: user.stripeCustomerId,
+        stripeSubscriptionId: user.stripeSubscriptionId,
+        proExpiresAt: user.proExpiresAt,
+        messagesSentCount: user.messagesSentCount,
+      });
+  } catch (_error) {
+    throw new ChatSDKError("bad_request:database", "Failed to create OAuth user");
+  }
+}
+
+export async function convertGuestUserToOAuth({
+  userId,
+  nextEmail,
+  googleId,
+  emailVerifiedAt,
+}: {
+  userId: string;
+  nextEmail: string;
+  googleId: string;
+  emailVerifiedAt?: Date | null;
+}) {
+  const normalizedEmail = nextEmail.toLowerCase();
+
+  try {
+    logInfo("db:convertGuestUserOAuth", "Updating guest user record to OAuth", {
+      userId,
+      nextEmail: maskEmail(normalizedEmail),
+      googleId,
+    });
+
+    const [updatedUser] = await db
+      .update(user)
+      .set({
+        email: normalizedEmail,
+        password: null,
+        authProvider: "google",
+        googleId,
+        emailVerifiedAt: emailVerifiedAt ?? null,
+      })
+      .where(eq(user.id, userId))
+      .returning({
+        id: user.id,
+        email: user.email,
+        tier: user.tier,
+        authProvider: user.authProvider,
+        googleId: user.googleId,
+        emailVerifiedAt: user.emailVerifiedAt,
+        stripeCustomerId: user.stripeCustomerId,
+        stripeSubscriptionId: user.stripeSubscriptionId,
+        proExpiresAt: user.proExpiresAt,
+        messagesSentCount: user.messagesSentCount,
+      });
+
+    if (!updatedUser) {
+      throw new ChatSDKError(
+        "bad_request:auth",
+        "Guest session could not be converted to OAuth."
+      );
+    }
+
+    logInfo("db:convertGuestUserOAuth", "Guest user converted to OAuth", {
+      userId: updatedUser.id,
+      googleId,
+    });
+
+    return updatedUser;
+  } catch (error) {
+    if (error instanceof ChatSDKError) {
+      logError("db:convertGuestUserOAuth", "Conversion failed with ChatSDKError", {
+        userId,
+        nextEmail: maskEmail(normalizedEmail),
+        googleId,
+        error,
+      });
+      throw error;
+    }
+
+    logError("db:convertGuestUserOAuth", "Conversion failed with database error", {
+      userId,
+      nextEmail: maskEmail(normalizedEmail),
+      googleId,
+      error,
+    });
+
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to convert guest user to OAuth"
+    );
+  }
+}
+
+export async function linkGoogleAccount({
+  userId,
+  googleId,
+  emailVerifiedAt,
+}: {
+  userId: string;
+  googleId: string;
+  emailVerifiedAt?: Date | null;
+}) {
+  try {
+    const [linkedUser] = await db
+      .update(user)
+      .set({
+        googleId,
+        authProvider: "google",
+        emailVerifiedAt: emailVerifiedAt ?? null,
+      })
+      .where(eq(user.id, userId))
+      .returning({
+        id: user.id,
+        email: user.email,
+        tier: user.tier,
+        authProvider: user.authProvider,
+        googleId: user.googleId,
+        emailVerifiedAt: user.emailVerifiedAt,
+        stripeCustomerId: user.stripeCustomerId,
+        stripeSubscriptionId: user.stripeSubscriptionId,
+        proExpiresAt: user.proExpiresAt,
+        messagesSentCount: user.messagesSentCount,
+      });
+
+    if (!linkedUser) {
+      throw new ChatSDKError(
+        "bad_request:database",
+        "Failed to link Google account"
+      );
+    }
+
+    return linkedUser;
+  } catch (error) {
+    logError("db:linkGoogleAccount", "Google account linking failed", {
+      userId,
+      googleId,
+      error,
+    });
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to link Google account"
     );
   }
 }

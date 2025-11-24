@@ -30,9 +30,10 @@ export const login = async (
       email: formData.get("email"),
       password: formData.get("password"),
     });
+    const normalizedEmail = validatedData.email.toLowerCase();
 
     await signIn("credentials", {
-      email: validatedData.email,
+      email: normalizedEmail,
       password: validatedData.password,
       redirect: false,
     });
@@ -68,20 +69,21 @@ export const register = async (
       email: formData.get("email"),
       password: formData.get("password"),
     });
+    const normalizedEmail = validatedData.email.toLowerCase();
 
     logInfo("auth:register", "Received register request", {
       sessionUserId: session?.user?.id,
       sessionUserType: session?.user?.type,
       sessionEmail: maskEmail(session?.user?.email),
-      incomingEmail: maskEmail(validatedData.email),
+      incomingEmail: maskEmail(normalizedEmail),
     });
 
-    const [user] = await getUser(validatedData.email);
+    const [user] = await getUser(normalizedEmail);
 
     if (user) {
       logInfo("auth:register", "User already exists for email", {
         sessionUserId: session?.user?.id,
-        incomingEmail: maskEmail(validatedData.email),
+        incomingEmail: maskEmail(normalizedEmail),
       });
       return { status: "user_exists" } as RegisterActionState;
     }
@@ -95,25 +97,25 @@ export const register = async (
       logInfo("auth:register", "Converting guest session to registered user", {
         sessionUserId,
         sessionEmail: maskEmail(sessionEmail),
-        targetEmail: maskEmail(validatedData.email),
+        targetEmail: maskEmail(normalizedEmail),
       });
       await convertGuestUserToRegistered({
         userId: sessionUserId,
         currentEmail: sessionEmail,
-        nextEmail: validatedData.email,
+        nextEmail: normalizedEmail,
         password: validatedData.password,
       });
     } else {
       logInfo("auth:register", "Creating new user record", {
-        targetEmail: maskEmail(validatedData.email),
+        targetEmail: maskEmail(normalizedEmail),
         sessionUserId,
         sessionUserType: session?.user?.type,
       });
-      await createUser(validatedData.email, validatedData.password);
+      await createUser(normalizedEmail, validatedData.password);
     }
 
     await signIn("credentials", {
-      email: validatedData.email,
+      email: normalizedEmail,
       password: validatedData.password,
       redirect: false,
     });

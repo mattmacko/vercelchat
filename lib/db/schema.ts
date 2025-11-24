@@ -23,12 +23,21 @@ export const user = pgTable(
     email: varchar("email", { length: 64 }).notNull(),
     password: varchar("password", { length: 64 }),
     tier: varchar("tier", { length: 16 }).notNull().default("free"),
+    authProvider: varchar("authProvider", { length: 16 })
+      .notNull()
+      .default("credentials"),
+    googleId: text("googleId"),
+    emailVerifiedAt: timestamp("emailVerifiedAt"),
     stripeCustomerId: text("stripeCustomerId"),
     stripeSubscriptionId: text("stripeSubscriptionId"),
     proExpiresAt: timestamp("proExpiresAt"),
     messagesSentCount: integer("messagesSentCount").notNull().default(0),
   },
   (table) => ({
+    emailUnique: uniqueIndex("User_email_unique").on(table.email),
+    googleIdUnique: uniqueIndex("User_googleId_unique")
+      .on(table.googleId)
+      .where(sql`${table.googleId} is not null`),
     tierIdx: index("User_tier_idx").on(table.tier),
     stripeCustomerUnique: uniqueIndex("User_stripeCustomerId_unique")
       .on(table.stripeCustomerId)

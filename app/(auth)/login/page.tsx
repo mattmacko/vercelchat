@@ -17,6 +17,9 @@ function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextParam = searchParams?.get("next") ?? null;
+  const authError = searchParams?.get("error") ?? null;
+  const safeNext = isSafeNextParam(nextParam) ? nextParam : null;
+  const callbackUrl = safeNext ?? "/";
 
   const [email, setEmail] = useState("");
   const [isSuccessful, setIsSuccessful] = useState(false);
@@ -31,6 +34,13 @@ function LoginPageContent() {
   const { update: updateSession } = useSession();
 
   useEffect(() => {
+    if (authError) {
+      toast({
+        type: "error",
+        description: "Sign in failed. Please try again.",
+      });
+    }
+
     if (state.status === "failed") {
       toast({
         type: "error",
@@ -45,14 +55,13 @@ function LoginPageContent() {
       setIsSuccessful(true);
       updateSession();
       // If a next param is provided, redirect there after successful login
-      const safeNext = isSafeNextParam(nextParam) ? nextParam : null;
       if (safeNext) {
         router.replace(safeNext);
       } else {
         router.replace("/");
       }
     }
-  }, [nextParam, router, state.status, updateSession]);
+  }, [authError, router, safeNext, state.status, updateSession]);
 
   const handleSubmit = (formData: FormData) => {
     setEmail(formData.get("email") as string);
@@ -68,7 +77,11 @@ function LoginPageContent() {
             Use your email and password to sign in
           </p>
         </div>
-        <AuthForm action={handleSubmit} defaultEmail={email}>
+        <AuthForm
+          action={handleSubmit}
+          callbackUrl={callbackUrl}
+          defaultEmail={email}
+        >
           <SubmitButton isSuccessful={isSuccessful}>Sign in</SubmitButton>
           <p className="mt-4 text-center text-gray-600 text-sm dark:text-zinc-400">
             {"Don't have an account? "}

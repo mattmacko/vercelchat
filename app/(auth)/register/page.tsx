@@ -16,6 +16,9 @@ function RegisterPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextParam = searchParams?.get("next") ?? null;
+  const authError = searchParams?.get("error") ?? null;
+  const safeNext = isSafeNextParam(nextParam) ? nextParam : null;
+  const callbackUrl = safeNext ?? "/";
 
   const [email, setEmail] = useState("");
   const [isSuccessful, setIsSuccessful] = useState(false);
@@ -31,6 +34,10 @@ function RegisterPageContent() {
   const { update: updateSession } = useSession();
 
   useEffect(() => {
+    if (authError) {
+      toast({ type: "error", description: "Sign in failed. Please try again." });
+    }
+
     if (state.status === "user_exists") {
       toast({ type: "error", description: "Account already exists!" });
     } else if (state.status === "failed") {
@@ -51,14 +58,13 @@ function RegisterPageContent() {
       setIsSuccessful(true);
       updateSession();
       // If a next param is provided, redirect there after successful signup
-      const safeNext = isSafeNextParam(nextParam) ? nextParam : null;
       if (safeNext) {
         router.replace(safeNext);
       } else {
         router.replace("/");
       }
     }
-  }, [nextParam, router, state.status, updateSession]);
+  }, [authError, router, safeNext, state.status, updateSession]);
 
   const handleSubmit = (formData: FormData) => {
     setEmail(formData.get("email") as string);
@@ -74,7 +80,11 @@ function RegisterPageContent() {
             Create an account with your email and password
           </p>
         </div>
-        <AuthForm action={handleSubmit} defaultEmail={email}>
+        <AuthForm
+          action={handleSubmit}
+          callbackUrl={callbackUrl}
+          defaultEmail={email}
+        >
           <SubmitButton isSuccessful={isSuccessful}>Sign Up</SubmitButton>
           <p className="mt-4 text-center text-gray-600 text-sm dark:text-zinc-400">
             {"Already have an account? "}
