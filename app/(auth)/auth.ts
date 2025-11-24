@@ -125,8 +125,10 @@ export const {
       return true;
     },
     async jwt({ token, user, account, profile }) {
+      const isGoogleSignIn = account?.provider === "google";
+
       try {
-        if (account?.provider === "google") {
+        if (isGoogleSignIn) {
           const googleId = account.providerAccountId;
           const emailFromProfile =
             typeof (profile as any)?.email === "string"
@@ -161,6 +163,7 @@ export const {
                 email: maskEmail(normalizedEmail ?? token.email),
                 error,
               });
+              throw error;
             }
           }
 
@@ -216,6 +219,9 @@ export const {
         return token;
       } catch (error) {
         logError("auth:jwt", "JWT callback failed", { error });
+        if (isGoogleSignIn) {
+          throw error;
+        }
         return token;
       }
     },
