@@ -51,13 +51,27 @@ async function cancelOtherActiveSubscriptions({
     await Promise.all(
       duplicates.map((subscription) =>
         stripe.subscriptions
-          .update(subscription.id, { cancel_at_period_end: true })
+          .cancel(subscription.id)
+          .then(() => {
+            logInfo(
+              "stripe:webhook",
+              "Canceled duplicate subscription immediately",
+              {
+                subscriptionId: subscription.id,
+                customerId,
+              }
+            );
+          })
           .catch((error) => {
-            logError("stripe:webhook", "Failed to cancel duplicate subscription", {
-              subscriptionId: subscription.id,
-              customerId,
-              error,
-            });
+            logError(
+              "stripe:webhook",
+              "Failed to cancel duplicate subscription",
+              {
+                subscriptionId: subscription.id,
+                customerId,
+                error,
+              }
+            );
           })
       )
     );
@@ -329,10 +343,14 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        logInfo("stripe:webhook", "Stripe subscription deleted; user downgraded", {
-          eventId: event.id,
-          subscriptionId: subscription.id,
-        });
+        logInfo(
+          "stripe:webhook",
+          "Stripe subscription deleted; user downgraded",
+          {
+            eventId: event.id,
+            subscriptionId: subscription.id,
+          }
+        );
 
         break;
       }

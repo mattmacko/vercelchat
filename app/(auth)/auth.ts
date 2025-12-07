@@ -12,6 +12,7 @@ import {
   getUser,
   getUserByEmail,
   getUserByGoogleId,
+  getUserById,
   linkGoogleAccount,
 } from "@/lib/db/queries";
 import { logError, logInfo, maskEmail } from "@/lib/logging";
@@ -116,7 +117,7 @@ export const {
 
         if (!email || !emailVerified) {
           logError("auth:signIn", "Blocked Google sign-in", {
-            reason: !email ? "missing_email" : "unverified_email",
+            reason: email ? "unverified_email" : "missing_email",
           });
           return false;
         }
@@ -133,12 +134,26 @@ export const {
           const emailFromProfile =
             typeof (profile as any)?.email === "string"
               ? (profile as any).email
-              : user?.email ?? token.email;
+              : (user?.email ?? token.email);
           const normalizedEmail = emailFromProfile?.toLowerCase() ?? null;
           const emailVerified = Boolean((profile as any)?.email_verified);
           const emailVerifiedAt = emailVerified ? new Date() : null;
 
-          let dbUser = googleId
+          // Type for dbUser that works with both full User and partial records from linking functions
+          type DbUserResult = {
+            id: string;
+            email: string;
+            tier: string;
+            authProvider: string;
+            googleId: string | null;
+            emailVerifiedAt?: Date | null;
+            stripeCustomerId?: string | null;
+            stripeSubscriptionId?: string | null;
+            proExpiresAt?: Date | null;
+            messagesSentCount?: number;
+          } | null;
+
+          let dbUser: DbUserResult = googleId
             ? await getUserByGoogleId(googleId)
             : null;
           const existingByEmail =
@@ -148,12 +163,28 @@ export const {
 
           const isGuestSession = token.type === "guest" && Boolean(token.id);
 
+          // IMPORTANT: Check if email already belongs to an existing account FIRST
+          // This prevents unique constraint failures when a guest tries to sign in
+          // with Google using an email that already has a credentials account
+          if (!dbUser && existingByEmail) {
+            dbUser = await linkGoogleAccount({
+              userId: existingByEmail.id,
+              googleId,
+              emailVerifiedAt,
+            });
+            logInfo("auth:jwt", "Linked Google to existing user", {
+              userId: existingByEmail.id,
+              email: maskEmail(existingByEmail.email),
+              wasGuestSession: isGuestSession,
+            });
+          }
+
+          // Only attempt guest conversion if no existing account with that email
           if (!dbUser && isGuestSession && token.id) {
             try {
               dbUser = await convertGuestUserToOAuth({
                 userId: token.id,
-                nextEmail:
-                  normalizedEmail ?? `guest-${Date.now()}@guest.local`,
+                nextEmail: normalizedEmail ?? `guest-${Date.now()}@guest.local`,
                 googleId,
                 emailVerifiedAt,
               });
@@ -167,22 +198,9 @@ export const {
             }
           }
 
-          if (!dbUser && existingByEmail) {
-            dbUser = await linkGoogleAccount({
-              userId: existingByEmail.id,
-              googleId,
-              emailVerifiedAt,
-            });
-            logInfo("auth:jwt", "Linked Google to existing user", {
-              userId: existingByEmail.id,
-              email: maskEmail(existingByEmail.email),
-            });
-          }
-
           if (!dbUser) {
             const [createdUser] = await createOAuthUser({
-              email:
-                normalizedEmail ?? `${googleId}@google-oauth.local`,
+              email: normalizedEmail ?? `${googleId}@google-oauth.local`,
               googleId,
               emailVerifiedAt,
             });
@@ -213,6 +231,23 @@ export const {
             token.id = dbUser.id;
             token.type = mapUserTypeFromRecord(dbUser);
             token.googleId = dbUser.googleId ?? token.googleId;
+          }
+        }
+
+        // Refresh token.type from DB on subsequent JWT refreshes to reflect
+        // billing changes (upgrades/downgrades) without requiring re-auth
+        if (!user && token.id && token.type) {
+          const dbUser = await getUserById(token.id);
+          if (dbUser) {
+            const currentType = mapUserTypeFromRecord(dbUser);
+            if (currentType !== token.type) {
+              logInfo("auth:jwt", "Refreshed user type from DB", {
+                userId: token.id,
+                previousType: token.type,
+                currentType,
+              });
+              token.type = currentType;
+            }
           }
         }
 
