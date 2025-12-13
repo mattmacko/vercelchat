@@ -1,5 +1,6 @@
 import "server-only";
 
+import { randomInt } from "node:crypto";
 import {
   and,
   asc,
@@ -8,7 +9,9 @@ import {
   gt,
   gte,
   inArray,
+  isNull,
   lt,
+  or,
   type SQL,
   sql,
 } from "drizzle-orm";
@@ -111,38 +114,48 @@ export async function createUser(email: string, password: string) {
 }
 
 export async function createGuestUser() {
-  const email = `guest-${Date.now()}`;
   const password = generateHashedPassword(generateUUID());
-  const normalizedEmail = email.toLowerCase();
 
-  try {
-    return await db
-      .insert(user)
-      .values({
-        email: normalizedEmail,
-        password,
-        tier: "free",
-        authProvider: "guest",
-        messagesSentCount: 0,
-      })
-      .returning({
-        id: user.id,
-        email: user.email,
-        tier: user.tier,
-        authProvider: user.authProvider,
-        googleId: user.googleId,
-        emailVerifiedAt: user.emailVerifiedAt,
-        stripeCustomerId: user.stripeCustomerId,
-        stripeSubscriptionId: user.stripeSubscriptionId,
-        proExpiresAt: user.proExpiresAt,
-        messagesSentCount: user.messagesSentCount,
-      });
-  } catch (_error) {
-    throw new ChatSDKError(
-      "bad_request:database",
-      "Failed to create guest user"
-    );
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const nonce = randomInt(0, 1_000_000).toString().padStart(6, "0");
+    const email = `guest-${Date.now()}${nonce}`;
+    const normalizedEmail = email.toLowerCase();
+
+    try {
+      return await db
+        .insert(user)
+        .values({
+          email: normalizedEmail,
+          password,
+          tier: "free",
+          authProvider: "guest",
+          messagesSentCount: 0,
+        })
+        .returning({
+          id: user.id,
+          email: user.email,
+          tier: user.tier,
+          authProvider: user.authProvider,
+          googleId: user.googleId,
+          emailVerifiedAt: user.emailVerifiedAt,
+          stripeCustomerId: user.stripeCustomerId,
+          stripeSubscriptionId: user.stripeSubscriptionId,
+          proExpiresAt: user.proExpiresAt,
+          messagesSentCount: user.messagesSentCount,
+        });
+    } catch (error) {
+      if (isPostgresUniqueViolation(error) && attempt < 4) {
+        continue;
+      }
+
+      throw new ChatSDKError(
+        "bad_request:database",
+        "Failed to create guest user"
+      );
+    }
   }
+
+  throw new ChatSDKError("bad_request:database", "Failed to create guest user");
 }
 
 export async function convertGuestUserToRegistered({
@@ -553,12 +566,121 @@ export async function updateByCustomerId(
 }
 
 export async function logStripeEventOnce(eventId: string) {
-  try {
-    await db.insert(stripeEventLog).values({ id: eventId });
-    return true;
-  } catch (_error) {
-    return false;
+  const result = await claimStripeEvent(eventId);
+  return result.shouldProcess;
+}
+
+function isPostgresUniqueViolation(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as any).code === "23505"
+  );
+}
+
+function serializeErrorForDb(error: unknown) {
+  if (!error) {
+    return null;
   }
+
+  let fallbackJson = "";
+  if (!(error instanceof Error) && typeof error !== "string") {
+    try {
+      fallbackJson = JSON.stringify(error);
+    } catch {
+      fallbackJson = String(error);
+    }
+  }
+
+  const errorMessage =
+    typeof error === "string"
+      ? error
+      : error instanceof Error
+        ? error.message
+        : fallbackJson;
+
+  return errorMessage.length > 2000
+    ? `${errorMessage.slice(0, 2000)}…`
+    : errorMessage;
+}
+
+const STRIPE_EVENT_RECLAIM_AFTER_MS = 5 * 60 * 1000;
+
+export async function claimStripeEvent(eventId: string) {
+  const now = new Date();
+
+  try {
+    await db.insert(stripeEventLog).values({
+      id: eventId,
+      status: "processing",
+      processingStartedAt: now,
+      attemptCount: 1,
+      lastError: null,
+    });
+
+    return { shouldProcess: true };
+  } catch (error) {
+    if (!isPostgresUniqueViolation(error)) {
+      logError("db:stripeEventLog", "Failed to claim Stripe event", {
+        eventId,
+        error,
+      });
+      throw error;
+    }
+
+    const reclaimBefore = new Date(now.getTime() - STRIPE_EVENT_RECLAIM_AFTER_MS);
+
+    const [claimed] = await db
+      .update(stripeEventLog)
+      .set({
+        status: "processing",
+        processingStartedAt: now,
+        lastError: null,
+        attemptCount: sql`${stripeEventLog.attemptCount} + 1`,
+      })
+      .where(
+        and(
+          eq(stripeEventLog.id, eventId),
+          or(
+            eq(stripeEventLog.status, "failed"),
+            and(
+              eq(stripeEventLog.status, "processing"),
+              or(
+                isNull(stripeEventLog.processingStartedAt),
+                lt(stripeEventLog.processingStartedAt, reclaimBefore)
+              )
+            )
+          )
+        )
+      )
+      .returning({ id: stripeEventLog.id });
+
+    return { shouldProcess: Boolean(claimed) };
+  }
+}
+
+export async function markStripeEventProcessed(eventId: string) {
+  const now = new Date();
+
+  await db
+    .update(stripeEventLog)
+    .set({
+      status: "processed",
+      processedAt: now,
+      lastError: null,
+    })
+    .where(eq(stripeEventLog.id, eventId));
+}
+
+export async function markStripeEventFailed(eventId: string, error: unknown) {
+  await db
+    .update(stripeEventLog)
+    .set({
+      status: "failed",
+      lastError: serializeErrorForDb(error),
+    })
+    .where(eq(stripeEventLog.id, eventId));
 }
 
 export async function incrementUserMessagesSentCount({

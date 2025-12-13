@@ -52,7 +52,14 @@ export type User = InferSelectModel<typeof user>;
 
 export const stripeEventLog = pgTable("stripe_event_log", {
   id: text("id").primaryKey(),
+  status: varchar("status", { length: 16 }).notNull().default("processing"),
   seenAt: timestamp("seen_at", { withTimezone: true }).defaultNow(),
+  processingStartedAt: timestamp("processing_started_at", {
+    withTimezone: true,
+  }),
+  processedAt: timestamp("processed_at", { withTimezone: true }),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  lastError: text("last_error"),
 });
 
 export const chat = pgTable("Chat", {

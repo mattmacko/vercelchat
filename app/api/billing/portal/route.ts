@@ -49,29 +49,40 @@ export async function POST(request: NextRequest) {
   const origin = process.env.APP_URL ?? request.nextUrl.origin;
   const portalPath =
     process.env.NEXT_PUBLIC_STRIPE_PORTAL_URL ?? "/billing/manage";
-  const returnUrl = HTTP_URL_REGEX.test(portalPath)
+  const computedReturnUrl = HTTP_URL_REGEX.test(portalPath)
     ? portalPath
     : `${origin}${portalPath.startsWith("/") ? portalPath : `/${portalPath}`}`;
+  let returnUrl = computedReturnUrl;
+
+  try {
+    const url = new URL(computedReturnUrl);
+    if (url.pathname === "/billing/manage") {
+      url.searchParams.set("fromPortal", "1");
+      returnUrl = url.toString();
+    }
+  } catch {
+    // Ignore malformed return URLs and fall back to the computed string.
+  }
 
   let customerId = dbUser.stripeCustomerId ?? null;
 
   try {
-      if (!customerId) {
-        const customer = await stripe.customers.create(
-          {
-            email: session.user.email ?? undefined,
-            metadata: { userId: session.user.id },
-          },
-          { idempotencyKey: `cust:${session.user.id}` }
-        );
+    if (!customerId) {
+      const customer = await stripe.customers.create(
+        {
+          email: session.user.email ?? undefined,
+          metadata: { userId: session.user.id },
+        },
+        { idempotencyKey: `cust:${session.user.id}` }
+      );
 
-        customerId = customer.id;
-        logInfo("billing:portal", "Created Stripe customer", {
-          userId: session.user.id,
-          customerId,
-        });
-        await setStripeCustomerId(session.user.id, customerId);
-      }
+      customerId = customer.id;
+      logInfo("billing:portal", "Created Stripe customer", {
+        userId: session.user.id,
+        customerId,
+      });
+      await setStripeCustomerId(session.user.id, customerId);
+    }
 
     const portalSession = await stripe.billingPortal.sessions.create(
       {

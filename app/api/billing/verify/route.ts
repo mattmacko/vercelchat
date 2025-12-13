@@ -3,17 +3,11 @@ export const dynamic = "force-dynamic";
 
 import { type NextRequest, NextResponse } from "next/server";
 import { auth } from "@/app/(auth)/auth";
+import { isProEntitledSubscriptionStatus } from "@/lib/billing/entitlement";
 import { upsertStripeDetails } from "@/lib/db/queries";
 import { ChatSDKError } from "@/lib/errors";
 import { logError, logInfo, maskEmail } from "@/lib/logging";
 import { getStripe } from "@/lib/stripe/client";
-
-const ACTIVE_SUBSCRIPTION_STATUSES = new Set([
-  "active",
-  "trialing",
-  "past_due",
-  "unpaid",
-]);
 
 export async function GET(request: NextRequest) {
   const session = await auth();
@@ -55,14 +49,18 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (checkoutSession.payment_status !== "paid") {
+    const paymentStatus = checkoutSession.payment_status;
+    const canVerifyPayment =
+      paymentStatus === "paid" || paymentStatus === "no_payment_required";
+
+    if (!canVerifyPayment) {
       logInfo("billing:verify", "Payment not yet completed", {
         userId: session.user.id,
-        paymentStatus: checkoutSession.payment_status,
+        paymentStatus,
       });
       return NextResponse.json({
         verified: false,
-        status: checkoutSession.payment_status,
+        status: paymentStatus,
       });
     }
 
@@ -81,10 +79,10 @@ export async function GET(request: NextRequest) {
         ? checkoutSession.subscription
         : (subscription?.id ?? null);
 
-    const isActiveSubscription =
-      subscription && ACTIVE_SUBSCRIPTION_STATUSES.has(subscription.status);
+    const isEntitledSubscription =
+      subscription && isProEntitledSubscriptionStatus(subscription.status);
 
-    if (isActiveSubscription && subscriptionId) {
+    if (isEntitledSubscription && subscriptionId) {
       // Get subscription period end for proExpiresAt
       const periodEnd = subscription.items?.data?.[0]?.current_period_end;
       const proExpiresAt = periodEnd ? new Date(periodEnd * 1000) : null;

@@ -1,29 +1,27 @@
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
 import { type NextRequest, NextResponse } from "next/server";
 import type Stripe from "stripe";
 import {
-  logStripeEventOnce,
+  isProEntitledSubscriptionStatus,
+  shouldDedupeSubscriptionsOnStatus,
+} from "@/lib/billing/entitlement";
+import {
+  claimStripeEvent,
+  markStripeEventFailed,
+  markStripeEventProcessed,
   updateByCustomerId,
   upsertStripeDetails,
 } from "@/lib/db/queries";
 import { logError, logInfo } from "@/lib/logging";
 import { getStripe } from "@/lib/stripe/client";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
-const SUBSCRIPTION_ACTIVE_STATUSES = new Set<Stripe.Subscription.Status>([
+const SUBSCRIPTION_DEDUPE_STATUSES = new Set<Stripe.Subscription.Status>([
   "active",
   "trialing",
-  "past_due",
-  "unpaid",
-]);
-
-const SUBSCRIPTION_FREE_STATUSES = new Set<Stripe.Subscription.Status>([
-  "canceled",
-  "incomplete",
-  "incomplete_expired",
 ]);
 
 async function cancelOtherActiveSubscriptions({
@@ -45,7 +43,7 @@ async function cancelOtherActiveSubscriptions({
     const duplicates = subscriptions.data.filter(
       (subscription) =>
         subscription.id !== keepSubscriptionId &&
-        SUBSCRIPTION_ACTIVE_STATUSES.has(subscription.status)
+        SUBSCRIPTION_DEDUPE_STATUSES.has(subscription.status)
     );
 
     await Promise.all(
@@ -82,6 +80,108 @@ async function cancelOtherActiveSubscriptions({
       error,
     });
   }
+}
+
+function pickPreferredEntitledSubscription(
+  subscriptions: Stripe.Subscription[]
+) {
+  if (subscriptions.length === 0) {
+    return null;
+  }
+
+  const active = subscriptions.filter(
+    (subscription) => subscription.status === "active"
+  );
+  const candidates = active.length > 0 ? active : subscriptions;
+
+  return candidates.reduce((best, current) => {
+    const bestEnd = getSubscriptionPeriodEnd(best)?.getTime() ?? 0;
+    const currentEnd = getSubscriptionPeriodEnd(current)?.getTime() ?? 0;
+    return currentEnd > bestEnd ? current : best;
+  });
+}
+
+async function syncCustomerEntitlement({
+  stripe,
+  customerId,
+  userId,
+  eventId,
+}: {
+  stripe: ReturnType<typeof getStripe>;
+  customerId: string;
+  userId?: string;
+  eventId: string;
+}): Promise<{ entitled: boolean; subscription: Stripe.Subscription | null }> {
+  const subscriptions = await stripe.subscriptions.list({
+    customer: customerId,
+    status: "all",
+    limit: 20,
+  });
+
+  const entitled = subscriptions.data.filter((subscription) =>
+    isProEntitledSubscriptionStatus(subscription.status)
+  );
+  const preferred = pickPreferredEntitledSubscription(entitled);
+
+  if (!preferred) {
+    if (userId) {
+      await upsertStripeDetails(userId, {
+        tier: "free",
+        stripeCustomerId: customerId,
+        stripeSubscriptionId: null,
+        proExpiresAt: null,
+      });
+    } else {
+      await updateByCustomerId(customerId, {
+        tier: "free",
+        stripeSubscriptionId: null,
+        proExpiresAt: null,
+      });
+    }
+
+    logInfo("stripe:webhook", "Customer entitlement sync downgraded user", {
+      eventId,
+      customerId,
+      hasUserId: Boolean(userId),
+    });
+
+    return { entitled: false, subscription: null };
+  }
+
+  const proExpiresAt = getSubscriptionPeriodEnd(preferred);
+
+  if (userId) {
+    await upsertStripeDetails(userId, {
+      tier: "pro",
+      stripeCustomerId: customerId,
+      stripeSubscriptionId: preferred.id,
+      proExpiresAt,
+    });
+  } else {
+    await updateByCustomerId(customerId, {
+      tier: "pro",
+      stripeSubscriptionId: preferred.id,
+      proExpiresAt,
+    });
+  }
+
+  logInfo("stripe:webhook", "Customer entitlement sync upgraded user", {
+    eventId,
+    customerId,
+    hasUserId: Boolean(userId),
+    subscriptionId: preferred.id,
+    status: preferred.status,
+  });
+
+  if (shouldDedupeSubscriptionsOnStatus(preferred.status)) {
+    await cancelOtherActiveSubscriptions({
+      stripe,
+      customerId,
+      keepSubscriptionId: preferred.id,
+    });
+  }
+
+  return { entitled: true, subscription: preferred };
 }
 
 function getSubscriptionPeriodEnd(subscription: Stripe.Subscription) {
@@ -137,9 +237,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const isFirstDelivery = await logStripeEventOnce(event.id);
+  let shouldProcessEvent = false;
 
-  if (!isFirstDelivery) {
+  try {
+    const claimResult = await claimStripeEvent(event.id);
+    shouldProcessEvent = claimResult.shouldProcess;
+  } catch (error) {
+    logError("stripe:webhook", "Failed to claim Stripe webhook event", {
+      eventType: event.type,
+      eventId: event.id,
+      error,
+    });
+    return NextResponse.json(
+      { error: "Failed to persist webhook delivery state" },
+      { status: 500 }
+    );
+  }
+
+  if (!shouldProcessEvent) {
     logInfo("stripe:webhook", "Stripe webhook replay ignored", {
       eventType: event.type,
       eventId: event.id,
@@ -171,29 +286,37 @@ export async function POST(request: NextRequest) {
         const userId = session.metadata?.userId as string | undefined;
 
         let proExpiresAt: Date | null = null;
+        let isEntitled = false;
+        let shouldDedupe = false;
 
         if (subscriptionId) {
           const subscription =
             await stripe.subscriptions.retrieve(subscriptionId);
           proExpiresAt = getSubscriptionPeriodEnd(subscription);
+          isEntitled = isProEntitledSubscriptionStatus(subscription.status);
+          shouldDedupe = shouldDedupeSubscriptionsOnStatus(subscription.status);
         }
 
         if (userId) {
           await upsertStripeDetails(userId, {
-            tier: "pro",
+            tier: isEntitled ? "pro" : undefined,
             stripeCustomerId: customerId ?? undefined,
-            stripeSubscriptionId: subscriptionId ?? undefined,
-            proExpiresAt,
+            stripeSubscriptionId: isEntitled
+              ? (subscriptionId ?? undefined)
+              : undefined,
+            proExpiresAt: isEntitled ? proExpiresAt : undefined,
           });
         } else if (customerId) {
           await updateByCustomerId(customerId, {
-            tier: "pro",
-            stripeSubscriptionId: subscriptionId ?? undefined,
-            proExpiresAt,
+            tier: isEntitled ? "pro" : undefined,
+            stripeSubscriptionId: isEntitled
+              ? (subscriptionId ?? undefined)
+              : undefined,
+            proExpiresAt: isEntitled ? proExpiresAt : undefined,
           });
         }
 
-        if (customerId && subscriptionId) {
+        if (customerId && subscriptionId && shouldDedupe) {
           await cancelOtherActiveSubscriptions({
             stripe,
             customerId,
@@ -213,11 +336,12 @@ export async function POST(request: NextRequest) {
             : subscriptionCustomer.id;
         const userId = subscription.metadata?.userId as string | undefined;
         const proExpiresAt = getSubscriptionPeriodEnd(subscription);
-        const shouldUpgrade = SUBSCRIPTION_ACTIVE_STATUSES.has(
+        const isEntitled = isProEntitledSubscriptionStatus(subscription.status);
+        const shouldDedupe = shouldDedupeSubscriptionsOnStatus(
           subscription.status
         );
 
-        if (shouldUpgrade) {
+        if (shouldDedupe) {
           await cancelOtherActiveSubscriptions({
             stripe,
             customerId,
@@ -227,16 +351,16 @@ export async function POST(request: NextRequest) {
 
         if (userId) {
           await upsertStripeDetails(userId, {
-            tier: shouldUpgrade ? "pro" : undefined,
+            tier: isEntitled ? "pro" : undefined,
             stripeCustomerId: customerId,
-            stripeSubscriptionId: subscription.id,
-            proExpiresAt,
+            stripeSubscriptionId: isEntitled ? subscription.id : undefined,
+            proExpiresAt: isEntitled ? proExpiresAt : undefined,
           });
         } else {
           await updateByCustomerId(customerId, {
-            tier: shouldUpgrade ? "pro" : undefined,
-            stripeSubscriptionId: subscription.id,
-            proExpiresAt,
+            tier: isEntitled ? "pro" : undefined,
+            stripeSubscriptionId: isEntitled ? subscription.id : undefined,
+            proExpiresAt: isEntitled ? proExpiresAt : undefined,
           });
         }
 
@@ -254,39 +378,12 @@ export async function POST(request: NextRequest) {
 
         const proExpiresAt = getSubscriptionPeriodEnd(subscription);
 
-        const isImmediateCancellation =
-          subscription.status === "canceled" &&
-          !subscription.cancel_at_period_end;
-
-        const isDowngraded =
-          isImmediateCancellation ||
-          SUBSCRIPTION_FREE_STATUSES.has(subscription.status);
-
-        const shouldUpgrade = SUBSCRIPTION_ACTIVE_STATUSES.has(
+        const isEntitled = isProEntitledSubscriptionStatus(subscription.status);
+        const shouldDedupe = shouldDedupeSubscriptionsOnStatus(
           subscription.status
         );
 
-        if (isDowngraded) {
-          logInfo("stripe:webhook", "Stripe subscription downgraded", {
-            eventId: event.id,
-            subscriptionId: subscription.id,
-            status: subscription.status,
-          });
-
-          if (userId) {
-            await upsertStripeDetails(userId, {
-              tier: "free",
-              stripeSubscriptionId: null,
-              proExpiresAt: null,
-            });
-          } else {
-            await updateByCustomerId(customerId, {
-              tier: "free",
-              stripeSubscriptionId: null,
-              proExpiresAt: null,
-            });
-          }
-        } else {
+        if (isEntitled) {
           logInfo("stripe:webhook", "Stripe subscription status update", {
             eventId: event.id,
             subscriptionId: subscription.id,
@@ -295,26 +392,39 @@ export async function POST(request: NextRequest) {
 
           if (userId) {
             await upsertStripeDetails(userId, {
-              tier: shouldUpgrade ? "pro" : undefined,
+              tier: "pro",
               stripeCustomerId: customerId,
               stripeSubscriptionId: subscription.id,
               proExpiresAt,
             });
           } else {
             await updateByCustomerId(customerId, {
-              tier: shouldUpgrade ? "pro" : undefined,
+              tier: "pro",
               stripeSubscriptionId: subscription.id,
               proExpiresAt,
             });
           }
 
-          if (shouldUpgrade) {
+          if (shouldDedupe) {
             await cancelOtherActiveSubscriptions({
               stripe,
               customerId,
               keepSubscriptionId: subscription.id,
             });
           }
+        } else {
+          logInfo("stripe:webhook", "Stripe subscription downgraded", {
+            eventId: event.id,
+            subscriptionId: subscription.id,
+            status: subscription.status,
+          });
+
+          await syncCustomerEntitlement({
+            stripe,
+            customerId,
+            userId,
+            eventId: event.id,
+          });
         }
 
         break;
@@ -329,19 +439,12 @@ export async function POST(request: NextRequest) {
             : subscriptionCustomer.id;
         const userId = subscription.metadata?.userId as string | undefined;
 
-        if (userId) {
-          await upsertStripeDetails(userId, {
-            tier: "free",
-            stripeSubscriptionId: null,
-            proExpiresAt: null,
-          });
-        } else {
-          await updateByCustomerId(customerId, {
-            tier: "free",
-            stripeSubscriptionId: null,
-            proExpiresAt: null,
-          });
-        }
+        await syncCustomerEntitlement({
+          stripe,
+          customerId,
+          userId,
+          eventId: event.id,
+        });
 
         logInfo(
           "stripe:webhook",
@@ -371,6 +474,15 @@ export async function POST(request: NextRequest) {
         break;
     }
   } catch (error: any) {
+    try {
+      await markStripeEventFailed(event.id, error);
+    } catch (markError) {
+      logError("stripe:webhook", "Failed to mark Stripe event as failed", {
+        eventType: event.type,
+        eventId: event.id,
+        error: markError,
+      });
+    }
     logError("stripe:webhook", "Stripe webhook processing error", {
       eventType: event.type,
       eventId: event.id,
@@ -378,6 +490,20 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json(
       { error: "Failed to process Stripe webhook event" },
+      { status: 500 }
+    );
+  }
+
+  try {
+    await markStripeEventProcessed(event.id);
+  } catch (error) {
+    logError("stripe:webhook", "Failed to mark Stripe event as processed", {
+      eventType: event.type,
+      eventId: event.id,
+      error,
+    });
+    return NextResponse.json(
+      { error: "Failed to persist webhook delivery state" },
       { status: 500 }
     );
   }
