@@ -7,7 +7,7 @@ export const myProvider = isTestEnvironment
       const { artifactModel, chatModel, titleModel } = require("./models.mock");
       return customProvider({
         languageModels: {
-          "mistral/mistral-medium": chatModel,
+          "mistral/mistral-large-3": chatModel,
           "title-model": titleModel,
           "artifact-model": artifactModel,
         },
@@ -15,10 +15,10 @@ export const myProvider = isTestEnvironment
     })()
   : customProvider({
       languageModels: {
-        "mistral/mistral-medium": gateway.languageModel(
-          "mistral/mistral-medium"
+        "mistral/mistral-large-3": gateway.languageModel(
+          "mistral/mistral-large-3"
         ),
-        "title-model": gateway.languageModel("mistral/mistral-medium"),
-        "artifact-model": gateway.languageModel("mistral/mistral-medium"),
+        "title-model": gateway.languageModel("mistral/mistral-large-3"),
+        "artifact-model": gateway.languageModel("mistral/mistral-large-3"),
       },
     });

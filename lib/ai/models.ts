@@ -1,4 +1,4 @@
-export const DEFAULT_CHAT_MODEL: string = "mistral/mistral-medium";
+export const DEFAULT_CHAT_MODEL: string = "mistral/mistral-large-3";
 
 export type ChatModel = {
   id: string;
@@ -8,8 +8,8 @@ export type ChatModel = {
 
 export const chatModels: ChatModel[] = [
   {
-    id: "mistral/mistral-medium",
-    name: "Uncensored",
-    description: "Maximally uncensored and truth seeking",
+    id: "mistral/mistral-large-3",
+    name: "Mistral Large 3",
+    description: "High-quality reasoning and general-purpose model",
   },
 ];
