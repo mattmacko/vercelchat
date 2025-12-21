@@ -17,6 +17,7 @@ const ACTIVE_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>([
 ]);
 
 const HTTP_URL_REGEX = /^https?:\/\//;
+const CHECKOUT_IDEMPOTENCY_WINDOW_MS = 5 * 60 * 1000;
 
 async function resolvePriceId(stripe: ReturnType<typeof getStripe>) {
   const lookupKey = process.env.STRIPE_PRICE_LOOKUP_KEY_PRO;
@@ -190,9 +191,12 @@ export async function POST(request: NextRequest) {
     const headerIdempotencyKey =
       request.headers.get("x-idempotency-key") ??
       request.headers.get("x-stripe-idempotency-key");
+    const idempotencyWindow = Math.floor(
+      Date.now() / CHECKOUT_IDEMPOTENCY_WINDOW_MS
+    ).toString(36);
     const idempotencyKey =
       headerIdempotencyKey ??
-      `checkout:${session.user.id}:${priceId}:${Date.now().toString(36)}`;
+      `checkout:${session.user.id}:${priceId}:${idempotencyWindow}`;
 
     const checkoutSession = await stripe.checkout.sessions.create(
       {

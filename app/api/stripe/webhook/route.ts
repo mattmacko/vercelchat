@@ -1,7 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server";
 import type Stripe from "stripe";
 import {
-  isProEntitledSubscriptionStatus,
+  getSubscriptionPeriodEnd,
+  isProEntitledSubscription,
   shouldDedupeSubscriptionsOnStatus,
 } from "@/lib/billing/entitlement";
 import {
@@ -112,6 +113,7 @@ async function syncCustomerEntitlement({
   userId?: string;
   eventId: string;
 }): Promise<{ entitled: boolean; subscription: Stripe.Subscription | null }> {
+  const now = new Date();
   const subscriptions = await stripe.subscriptions.list({
     customer: customerId,
     status: "all",
@@ -119,7 +121,7 @@ async function syncCustomerEntitlement({
   });
 
   const entitled = subscriptions.data.filter((subscription) =>
-    isProEntitledSubscriptionStatus(subscription.status)
+    isProEntitledSubscription(subscription, now)
   );
   const preferred = pickPreferredEntitledSubscription(entitled);
 
@@ -182,25 +184,6 @@ async function syncCustomerEntitlement({
   }
 
   return { entitled: true, subscription: preferred };
-}
-
-function getSubscriptionPeriodEnd(subscription: Stripe.Subscription) {
-  const items = subscription.items?.data ?? [];
-
-  let latestPeriodEnd: number | null = null;
-
-  for (const item of items) {
-    const periodEnd = Number(item.current_period_end);
-    if (!Number.isFinite(periodEnd)) {
-      continue;
-    }
-    latestPeriodEnd =
-      latestPeriodEnd === null
-        ? periodEnd
-        : Math.max(latestPeriodEnd, periodEnd);
-  }
-
-  return latestPeriodEnd ? new Date(latestPeriodEnd * 1000) : null;
 }
 
 export async function POST(request: NextRequest) {
@@ -293,7 +276,7 @@ export async function POST(request: NextRequest) {
           const subscription =
             await stripe.subscriptions.retrieve(subscriptionId);
           proExpiresAt = getSubscriptionPeriodEnd(subscription);
-          isEntitled = isProEntitledSubscriptionStatus(subscription.status);
+          isEntitled = isProEntitledSubscription(subscription);
           shouldDedupe = shouldDedupeSubscriptionsOnStatus(subscription.status);
         }
 
@@ -336,7 +319,7 @@ export async function POST(request: NextRequest) {
             : subscriptionCustomer.id;
         const userId = subscription.metadata?.userId as string | undefined;
         const proExpiresAt = getSubscriptionPeriodEnd(subscription);
-        const isEntitled = isProEntitledSubscriptionStatus(subscription.status);
+        const isEntitled = isProEntitledSubscription(subscription);
         const shouldDedupe = shouldDedupeSubscriptionsOnStatus(
           subscription.status
         );
@@ -378,7 +361,7 @@ export async function POST(request: NextRequest) {
 
         const proExpiresAt = getSubscriptionPeriodEnd(subscription);
 
-        const isEntitled = isProEntitledSubscriptionStatus(subscription.status);
+        const isEntitled = isProEntitledSubscription(subscription);
         const shouldDedupe = shouldDedupeSubscriptionsOnStatus(
           subscription.status
         );

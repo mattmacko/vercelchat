@@ -3,7 +3,10 @@ export const dynamic = "force-dynamic";
 
 import { type NextRequest, NextResponse } from "next/server";
 import { auth } from "@/app/(auth)/auth";
-import { isProEntitledSubscriptionStatus } from "@/lib/billing/entitlement";
+import {
+  getSubscriptionPeriodEnd,
+  isProEntitledSubscription,
+} from "@/lib/billing/entitlement";
 import { upsertStripeDetails } from "@/lib/db/queries";
 import { ChatSDKError } from "@/lib/errors";
 import { logError, logInfo, maskEmail } from "@/lib/logging";
@@ -79,13 +82,15 @@ export async function GET(request: NextRequest) {
         ? checkoutSession.subscription
         : (subscription?.id ?? null);
 
-    const isEntitledSubscription =
-      subscription && isProEntitledSubscriptionStatus(subscription.status);
+    const isEntitledSubscription = subscription
+      ? isProEntitledSubscription(subscription)
+      : false;
 
     if (isEntitledSubscription && subscriptionId) {
       // Get subscription period end for proExpiresAt
-      const periodEnd = subscription.items?.data?.[0]?.current_period_end;
-      const proExpiresAt = periodEnd ? new Date(periodEnd * 1000) : null;
+      const proExpiresAt = subscription
+        ? getSubscriptionPeriodEnd(subscription)
+        : null;
 
       await upsertStripeDetails(session.user.id, {
         tier: "pro",

@@ -2,10 +2,22 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useBillingLimits } from "@/hooks/use-billing";
 
 type VerifyState = "verifying" | "success" | "error";
+
+const MAX_VERIFY_ATTEMPTS = 10;
+const VERIFY_RETRY_DELAY_MS = 2000;
+const TERMINAL_VERIFY_STATUSES = new Set([
+  "canceled",
+  "expired",
+  "incomplete",
+  "incomplete_expired",
+  "past_due",
+  "paused",
+  "unpaid",
+]);
 
 function BillingSuccessContent() {
   const searchParams = useSearchParams();
@@ -14,6 +26,8 @@ function BillingSuccessContent() {
   const [verifyState, setVerifyState] = useState<VerifyState>(
     sessionId ? "verifying" : "success"
   );
+  const verifyAttempts = useRef(0);
+  const verifyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!sessionId) {
@@ -24,21 +38,44 @@ function BillingSuccessContent() {
       return;
     }
 
+    let isActive = true;
+    verifyAttempts.current = 0;
+    setVerifyState("verifying");
+
     // Verify the checkout session with Stripe directly
     const verifyCheckout = async () => {
+      verifyAttempts.current += 1;
+
       try {
         const response = await fetch(
           `/api/billing/verify?session_id=${encodeURIComponent(sessionId)}`
         );
         const data = await response.json();
 
+        if (!isActive) {
+          return;
+        }
+
         if (response.ok && data.verified) {
           setVerifyState("success");
           // Refresh billing limits to update UI
           await mutate();
         } else if (response.ok && !data.verified) {
+          const status = typeof data?.status === "string" ? data.status : null;
+          const reachedLimit = verifyAttempts.current >= MAX_VERIFY_ATTEMPTS;
+          const shouldStop =
+            reachedLimit || (status && TERMINAL_VERIFY_STATUSES.has(status));
+
+          if (shouldStop) {
+            setVerifyState("error");
+            return;
+          }
+
           // Payment not yet complete, retry after a short delay
-          setTimeout(verifyCheckout, 2000);
+          verifyTimeoutRef.current = setTimeout(
+            verifyCheckout,
+            VERIFY_RETRY_DELAY_MS
+          );
         } else {
           console.error("Verification failed:", data.error);
           setVerifyState("error");
@@ -50,6 +87,13 @@ function BillingSuccessContent() {
     };
 
     verifyCheckout();
+
+    return () => {
+      isActive = false;
+      if (verifyTimeoutRef.current) {
+        clearTimeout(verifyTimeoutRef.current);
+      }
+    };
   }, [sessionId, mutate]);
 
   if (verifyState === "verifying") {

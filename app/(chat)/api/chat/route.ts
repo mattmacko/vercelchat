@@ -26,6 +26,7 @@ import { createDocument } from "@/lib/ai/tools/create-document";
 import { getWeather } from "@/lib/ai/tools/get-weather";
 import { requestSuggestions } from "@/lib/ai/tools/request-suggestions";
 import { updateDocument } from "@/lib/ai/tools/update-document";
+import { isUserProEntitled } from "@/lib/billing/entitlement";
 import { isProductionEnvironment } from "@/lib/constants";
 import {
   createStreamId,
@@ -120,8 +121,9 @@ export async function POST(request: Request) {
       return new ChatSDKError("unauthorized:chat").toResponse();
     }
 
-    const userType: UserType =
-      dbUser.tier === "pro" ? "pro" : session.user.type;
+    const userType: UserType = isUserProEntitled(dbUser)
+      ? "pro"
+      : session.user.type;
 
     const { maxLifetimeMessages } = entitlementsByUserType[userType];
 

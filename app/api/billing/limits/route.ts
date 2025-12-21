@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/app/(auth)/auth";
 import { FREE_LIFETIME_MESSAGE_LIMIT } from "@/lib/billing/config";
+import { isUserProEntitled } from "@/lib/billing/entitlement";
 import { getUserById } from "@/lib/db/queries";
 import { ChatSDKError } from "@/lib/errors";
 import { logError, logInfo, maskEmail } from "@/lib/logging";
@@ -30,12 +31,7 @@ export async function GET() {
     return new ChatSDKError("unauthorized:api").toResponse();
   }
 
-  const now = new Date();
-  const hasActiveSubscription = Boolean(dbUser.stripeSubscriptionId);
-  const hasValidExpiry =
-    !dbUser.proExpiresAt || dbUser.proExpiresAt.getTime() > now.getTime();
-  const isPro =
-    dbUser.tier === "pro" && hasActiveSubscription && hasValidExpiry;
+  const isPro = isUserProEntitled(dbUser);
 
   const limit = isPro ? null : FREE_LIFETIME_MESSAGE_LIMIT;
   const used = dbUser.messagesSentCount;
