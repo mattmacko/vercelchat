@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
 import { openBillingPortal } from "@/lib/billing/client";
 
-export default function Page() {
+function BillingManageContent() {
   const searchParams = useSearchParams();
   const fromPortal = searchParams?.get("fromPortal") === "1";
 
@@ -47,5 +47,21 @@ export default function Page() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-dvh w-screen items-center justify-center p-6">
+          <div className="text-center text-muted-foreground text-sm">
+            Loading…
+          </div>
+        </div>
+      }
+    >
+      <BillingManageContent />
+    </Suspense>
   );
 }
