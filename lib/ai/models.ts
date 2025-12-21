@@ -9,7 +9,7 @@ export type ChatModel = {
 export const chatModels: ChatModel[] = [
   {
     id: "mistral/mistral-large-3",
-    name: "Mistral Large 3",
-    description: "High-quality reasoning and general-purpose model",
+    name: "Uncensored",
+    description: "Maximally uncensored and truth seeking",
   },
 ];
