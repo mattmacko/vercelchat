@@ -28,7 +28,7 @@ export function UpgradeCta({
   if (isLoading) {
     return (
       <Button
-        className={cn("hidden h-8 md:flex md:h-fit md:px-3", className)}
+        className={cn("flex h-8 text-xs md:text-sm md:h-fit md:px-3", className)}
         disabled
         variant="outline"
       >
@@ -43,10 +43,10 @@ export function UpgradeCta({
 
   if (data.isPro) {
     return (
-      <div className={cn("hidden items-center gap-2 md:flex", className)}>
-        <Badge variant="secondary">Pro</Badge>
+      <div className={cn("flex items-center gap-2", className)}>
+        <Badge variant="secondary" className="text-[10px] md:text-xs">Pro</Badge>
         <Button
-          className="h-8 md:h-fit md:px-3"
+          className="h-8 px-2 text-xs md:h-fit md:px-3 md:text-sm"
           onClick={() => {
             openBillingPortal().catch((error) => {
               console.error("Failed to open billing portal", error);
@@ -68,7 +68,7 @@ export function UpgradeCta({
   return (
     <Button
       className={cn(
-        "hidden h-8 justify-between gap-2 md:flex md:h-fit md:px-3",
+        "flex h-8 justify-between gap-2 text-xs md:h-fit md:px-3 md:text-sm",
         className
       )}
       onClick={() => {
@@ -81,9 +81,15 @@ export function UpgradeCta({
         window.location.href = "/billing/upgrade";
       }}
     >
-      Upgrade to Pro
+      <span className="md:hidden">Upgrade</span>
+      <span className="hidden md:inline">Upgrade to Pro</span>
       {remainingLabel && (
-        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs">
+        <span
+          className={cn(
+            "rounded-full bg-primary/10 px-2 py-0.5 text-[10px] md:text-xs",
+            data.remaining !== null && data.remaining <= 3 && "animate-pulse"
+          )}
+        >
           {remainingLabel}
         </span>
       )}
