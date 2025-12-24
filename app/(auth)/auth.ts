@@ -57,6 +57,13 @@ const mapUserTypeFromRecord = (dbUser: {
   return "regular";
 };
 
+const googleClientId = process.env.GOOGLE_CLIENT_ID;
+const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+if (!googleClientId || !googleClientSecret) {
+  throw new Error("Missing Google OAuth environment variables.");
+}
+
 export const {
   handlers: { GET, POST },
   auth,
@@ -66,8 +73,8 @@ export const {
   ...authConfig,
   providers: [
     Google({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      clientId: googleClientId,
+      clientSecret: googleClientSecret,
     }),
     Credentials({
       credentials: {},
@@ -107,7 +114,7 @@ export const {
     }),
   ],
   callbacks: {
-    async signIn({ account, profile }) {
+    signIn({ account, profile }) {
       if (account?.provider === "google") {
         const emailVerified = Boolean((profile as any)?.email_verified);
         const email =

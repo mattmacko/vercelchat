@@ -221,22 +221,22 @@ export async function POST(request: NextRequest) {
   let customerId = dbUser.stripeCustomerId ?? null;
 
   try {
-      if (!customerId) {
-        const customer = await stripe.customers.create(
-          {
-            email: session.user.email ?? undefined,
-            metadata: { userId: session.user.id },
-          },
-          { idempotencyKey: `cust:${session.user.id}` }
-        );
+    if (!customerId) {
+      const customer = await stripe.customers.create(
+        {
+          email: session.user.email ?? undefined,
+          metadata: { userId: session.user.id },
+        },
+        { idempotencyKey: `cust:${session.user.id}` }
+      );
 
-        customerId = customer.id;
-        logInfo("billing:checkout", "Created Stripe customer", {
-          userId: session.user.id,
-          customerId,
-        });
-        await setStripeCustomerId(session.user.id, customerId);
-      }
+      customerId = customer.id;
+      logInfo("billing:checkout", "Created Stripe customer", {
+        userId: session.user.id,
+        customerId,
+      });
+      await setStripeCustomerId(session.user.id, customerId);
+    }
 
     const priceId = await resolvePriceId(stripe, plan);
     const headerIdempotencyKey =

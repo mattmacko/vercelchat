@@ -1,9 +1,9 @@
 "use client";
 
+import { CheckIcon } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
-import { useEffect, useRef } from "react";
-import { CheckIcon } from "lucide-react";
+import { Suspense, useEffect, useRef } from "react";
 import { toast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { redirectToCheckout } from "@/lib/billing/client";
 import { LIFETIME_PLAN, PRO_PLAN } from "@/lib/billing/config";
 import { guestRegex } from "@/lib/constants";
 
-export default function Page() {
+function UpgradePageContent() {
   const { data: session, status } = useSession();
   const searchParams = useSearchParams();
   const autoCheckoutStarted = useRef(false);
@@ -42,13 +42,13 @@ export default function Page() {
     const isGuest = guestRegex.test(session?.user?.email ?? "");
 
     if (isGuest) {
-      void signIn("google", {
+      signIn("google", {
         callbackUrl: `/billing/upgrade?plan=${plan}&auto=1`,
       });
       return;
     }
 
-    void redirectToCheckout(plan);
+    redirectToCheckout(plan);
   };
 
   useEffect(() => {
@@ -73,21 +73,21 @@ export default function Page() {
     const isGuest = guestRegex.test(session?.user?.email ?? "");
 
     if (isGuest) {
-      void signIn("google", {
+      signIn("google", {
         callbackUrl: `/billing/upgrade?plan=${selectedPlan}&auto=1`,
       });
       return;
     }
 
-    void redirectToCheckout(selectedPlan);
+    redirectToCheckout(selectedPlan);
   }, [selectedPlan, session?.user?.email, shouldAutoCheckout, status]);
 
   return (
-    <div className="flex min-h-dvh w-screen items-center justify-center bg-gradient-to-b from-background via-background to-muted/40 px-4 py-12 dark:to-black sm:px-6">
+    <div className="flex min-h-dvh w-screen items-center justify-center bg-gradient-to-b from-background via-background to-muted/40 px-4 py-12 sm:px-6 dark:to-black">
       <div className="w-full max-w-5xl">
-        <div className="rounded-3xl border border-black/5 bg-gradient-to-b from-white to-slate-50 p-6 shadow-xl dark:border-white/10 dark:from-zinc-950 dark:to-zinc-900 sm:p-10">
+        <div className="rounded-3xl border border-black/5 bg-gradient-to-b from-white to-slate-50 p-6 shadow-xl sm:p-10 dark:border-white/10 dark:from-zinc-950 dark:to-zinc-900">
           <div className="text-center">
-            <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
+            <h1 className="font-semibold text-4xl tracking-tight sm:text-5xl">
               Upgrade to {PRO_PLAN.name}
             </h1>
             <p className="mt-3 text-base text-muted-foreground">
@@ -98,7 +98,7 @@ export default function Page() {
           <div className="mt-8 grid gap-6 md:grid-cols-2">
             <div className={`${cardBase} ${lifetimeCard}`}>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
+                <span className="font-semibold text-emerald-700 text-xs uppercase tracking-[0.2em] dark:text-emerald-300">
                   Founder&apos;s access
                 </span>
                 <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-200">
@@ -106,7 +106,7 @@ export default function Page() {
                 </Badge>
               </div>
               {typeof lifetimeSpots === "number" && (
-                <div className="mt-3 inline-flex items-center gap-2 text-xs font-medium text-emerald-700/90 dark:text-emerald-200">
+                <div className="mt-3 inline-flex items-center gap-2 font-medium text-emerald-700/90 text-xs dark:text-emerald-200">
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
                   {lifetimeSpots} spots remaining
                 </div>
@@ -115,14 +115,14 @@ export default function Page() {
                 <span className="font-[var(--font-instrument-serif)] text-4xl sm:text-5xl">
                   {LIFETIME_PLAN.price}
                 </span>
-                <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                <span className="text-muted-foreground text-xs uppercase tracking-[0.2em]">
                   {LIFETIME_PLAN.interval}
                 </span>
               </div>
-              <p className="mt-2 text-sm text-muted-foreground">
+              <p className="mt-2 text-muted-foreground text-sm">
                 {LIFETIME_PLAN.description}
               </p>
-              <ul className="mt-4 space-y-2 text-sm text-foreground/80">
+              <ul className="mt-4 space-y-2 text-foreground/80 text-sm">
                 {LIFETIME_PLAN.features.map((feature) => (
                   <li className="flex items-center gap-2" key={feature}>
                     <CheckIcon className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
@@ -131,7 +131,7 @@ export default function Page() {
                 ))}
               </ul>
               {lifetimeValueNote && (
-                <p className="mt-4 text-xs font-medium text-emerald-700 dark:text-emerald-200">
+                <p className="mt-4 font-medium text-emerald-700 text-xs dark:text-emerald-200">
                   {lifetimeValueNote}
                 </p>
               )}
@@ -147,7 +147,7 @@ export default function Page() {
 
             <div className={`${cardBase} ${proCard}`}>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">
+                <span className="font-semibold text-white/60 text-xs uppercase tracking-[0.2em]">
                   {PRO_PLAN.name}
                 </span>
               </div>
@@ -155,7 +155,7 @@ export default function Page() {
                 <span className="font-[var(--font-instrument-serif)] text-4xl text-white sm:text-5xl">
                   {PRO_PLAN.price}
                 </span>
-                <span className="text-xs uppercase tracking-[0.2em] text-white/60">
+                <span className="text-white/60 text-xs uppercase tracking-[0.2em]">
                   per {PRO_PLAN.interval}
                 </span>
               </div>
@@ -181,7 +181,7 @@ export default function Page() {
             </div>
           </div>
 
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-4 text-xs text-muted-foreground">
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-4 text-muted-foreground text-xs">
             <span className="inline-flex items-center gap-2">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500/80" />
               Secure checkout
@@ -198,5 +198,13 @@ export default function Page() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={null}>
+      <UpgradePageContent />
+    </Suspense>
   );
 }

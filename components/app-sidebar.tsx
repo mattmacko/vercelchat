@@ -73,7 +73,7 @@ export function AppSidebar({ user }: { user: User | undefined }) {
                 <span className="cursor-pointer rounded-md px-2 hover:bg-muted">
                   <span className="flex items-start font-[var(--font-instrument-serif)] text-lg tracking-[-0.02em]">
                     Jarn
-                    <span className="ml-0.5 mt-1.5 text-[0.45em] opacity-80">
+                    <span className="mt-1.5 ml-0.5 text-[0.45em] opacity-80">
                       ®
                     </span>
                   </span>

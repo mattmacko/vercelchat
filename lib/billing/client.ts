@@ -18,9 +18,9 @@ async function postAndExtractUrl(
     let message = "Unable to complete request. Please try again.";
 
     try {
-      const body = await response.json();
-      if (typeof body?.message === "string") {
-        message = body.message;
+      const payload = await response.json();
+      if (typeof payload?.message === "string") {
+        message = payload.message;
       }
     } catch (_) {
       // ignore JSON parse errors

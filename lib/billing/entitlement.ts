@@ -65,7 +65,9 @@ export function isUserProEntitled(
     return true;
   }
 
-  const graceEndsAt = new Date(user.proExpiresAt.getTime() + PRO_GRACE_PERIOD_MS);
+  const graceEndsAt = new Date(
+    user.proExpiresAt.getTime() + PRO_GRACE_PERIOD_MS
+  );
   return graceEndsAt.getTime() > now.getTime();
 }
 

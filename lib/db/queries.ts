@@ -280,7 +280,10 @@ export async function createOAuthUser({
         messagesSentCount: user.messagesSentCount,
       });
   } catch (_error) {
-    throw new ChatSDKError("bad_request:database", "Failed to create OAuth user");
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to create OAuth user"
+    );
   }
 }
 
@@ -342,21 +345,29 @@ export async function convertGuestUserToOAuth({
     return updatedUser;
   } catch (error) {
     if (error instanceof ChatSDKError) {
-      logError("db:convertGuestUserOAuth", "Conversion failed with ChatSDKError", {
+      logError(
+        "db:convertGuestUserOAuth",
+        "Conversion failed with ChatSDKError",
+        {
+          userId,
+          nextEmail: maskEmail(normalizedEmail),
+          googleId,
+          error,
+        }
+      );
+      throw error;
+    }
+
+    logError(
+      "db:convertGuestUserOAuth",
+      "Conversion failed with database error",
+      {
         userId,
         nextEmail: maskEmail(normalizedEmail),
         googleId,
         error,
-      });
-      throw error;
-    }
-
-    logError("db:convertGuestUserOAuth", "Conversion failed with database error", {
-      userId,
-      nextEmail: maskEmail(normalizedEmail),
-      googleId,
-      error,
-    });
+      }
+    );
 
     throw new ChatSDKError(
       "bad_request:database",
@@ -654,7 +665,9 @@ export async function claimStripeEvent(eventId: string) {
       throw error;
     }
 
-    const reclaimBefore = new Date(now.getTime() - STRIPE_EVENT_RECLAIM_AFTER_MS);
+    const reclaimBefore = new Date(
+      now.getTime() - STRIPE_EVENT_RECLAIM_AFTER_MS
+    );
 
     const [claimed] = await db
       .update(stripeEventLog)

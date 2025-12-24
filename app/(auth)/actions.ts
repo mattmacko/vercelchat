@@ -1,13 +1,12 @@
 "use server";
 
 import { z } from "zod";
-
+import { guestRegex } from "@/lib/constants";
 import {
   convertGuestUserToRegistered,
   createUser,
   getUser,
 } from "@/lib/db/queries";
-import { guestRegex } from "@/lib/constants";
 import { logError, logInfo, maskEmail } from "@/lib/logging";
 
 import { auth, signIn } from "./auth";

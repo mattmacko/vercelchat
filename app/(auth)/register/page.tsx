@@ -18,7 +18,10 @@ function RegisterPageContent() {
 
   useEffect(() => {
     if (authError) {
-      toast({ type: "error", description: "Sign in failed. Please try again." });
+      toast({
+        type: "error",
+        description: "Sign in failed. Please try again.",
+      });
     }
   }, [authError]);
 

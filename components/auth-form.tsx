@@ -1,7 +1,7 @@
 "use client";
 
-import { signIn } from "next-auth/react";
 import Form from "next/form";
+import { signIn } from "next-auth/react";
 
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -14,21 +14,19 @@ export function AuthForm({
   callbackUrl = "/",
   showCredentials = true,
 }: {
-  action?: NonNullable<
-    string | ((formData: FormData) => void | Promise<void>) | undefined
-  >;
+  action?: string | ((formData: FormData) => void | Promise<void>);
   children: React.ReactNode;
   defaultEmail?: string;
   callbackUrl?: string;
   showCredentials?: boolean;
 }) {
-  return (
-    <Form action={action} className="flex flex-col gap-4 px-4 sm:px-16">
+  const formBody = (
+    <>
       <Button
-        onClick={() => {
-          void signIn("google", { callbackUrl });
-        }}
         className="gap-2"
+        onClick={() => {
+          signIn("google", { callbackUrl });
+        }}
         type="button"
         variant="outline"
       >
@@ -110,6 +108,16 @@ export function AuthForm({
       ) : null}
 
       {children}
-    </Form>
+    </>
   );
+
+  if (action !== undefined) {
+    return (
+      <Form action={action} className="flex flex-col gap-4 px-4 sm:px-16">
+        {formBody}
+      </Form>
+    );
+  }
+
+  return <form className="flex flex-col gap-4 px-4 sm:px-16">{formBody}</form>;
 }
