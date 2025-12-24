@@ -1,20 +1,21 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
 import { useMemo } from "react";
-import { toast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/toast";
 import { useBillingLimits } from "@/hooks/use-billing";
 import { openBillingPortal } from "@/lib/billing/client";
-import { guestRegex } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
-export function UpgradeCta({ className }: { className?: string }) {
+export function UpgradeCta({
+  className,
+  onUpgrade,
+}: {
+  className?: string;
+  onUpgrade?: () => void;
+}) {
   const { data, isLoading } = useBillingLimits();
-  const { data: session, status } = useSession();
-  const router = useRouter();
 
   const remainingLabel = useMemo(() => {
     if (!data || data.limit === null || data.remaining === null) {
@@ -71,23 +72,13 @@ export function UpgradeCta({ className }: { className?: string }) {
         className
       )}
       onClick={() => {
-        if (status === "loading") {
-          toast({
-            type: "error",
-            description: "Checking authentication status, please try again!",
-          });
+        if (onUpgrade) {
+          onUpgrade();
           return;
         }
 
-        const isGuest = guestRegex.test(session?.user?.email ?? "");
-
-        if (isGuest) {
-          router.push("/register?next=/billing/upgrade");
-          return;
-        }
-
-        // Non-guest users go to upgrade route which handles portal vs checkout
-        router.push("/billing/upgrade");
+        // Fallback path for non-chat contexts.
+        window.location.href = "/billing/upgrade";
       }}
     >
       Upgrade to Pro

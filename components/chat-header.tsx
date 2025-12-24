@@ -12,9 +12,11 @@ import { UpgradeCta } from "./upgrade-cta";
 function PureChatHeader({
   chatId: _chatId,
   isReadonly,
+  onUpgrade,
 }: {
   chatId: string;
   isReadonly: boolean;
+  onUpgrade?: () => void;
 }) {
   const router = useRouter();
   const { open } = useSidebar();
@@ -39,7 +41,9 @@ function PureChatHeader({
         </Button>
       )}
 
-      {!isReadonly && <UpgradeCta className="order-1 md:order-2" />}
+      {!isReadonly && (
+        <UpgradeCta className="order-1 md:order-2" onUpgrade={onUpgrade} />
+      )}
 
       <div className="order-3 md:ml-auto" />
     </header>

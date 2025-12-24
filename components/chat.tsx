@@ -164,7 +164,11 @@ export function Chat({
   return (
     <>
       <div className="overscroll-behavior-contain flex h-dvh min-w-0 touch-pan-y flex-col bg-background">
-        <ChatHeader chatId={id} isReadonly={isReadonly} />
+        <ChatHeader
+          chatId={id}
+          isReadonly={isReadonly}
+          onUpgrade={() => setShowUpgradeOverlay(true)}
+        />
 
         <Messages
           chatId={id}

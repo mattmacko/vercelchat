@@ -1,7 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { useSearchParams } from "next/navigation";
+import { signIn, useSession } from "next-auth/react";
+import { useEffect, useRef } from "react";
 import { toast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,14 @@ import { guestRegex } from "@/lib/constants";
 
 export default function Page() {
   const { data: session, status } = useSession();
-  const router = useRouter();
+  const searchParams = useSearchParams();
+  const autoCheckoutStarted = useRef(false);
+
+  const planParam = searchParams.get("plan");
+  const autoParam = searchParams.get("auto");
+  const selectedPlan =
+    planParam === "monthly" || planParam === "lifetime" ? planParam : null;
+  const shouldAutoCheckout = autoParam === "1" && selectedPlan !== null;
 
   const startCheckout = (plan: "monthly" | "lifetime") => {
     if (status === "loading") {
@@ -33,12 +41,45 @@ export default function Page() {
     const isGuest = guestRegex.test(session?.user?.email ?? "");
 
     if (isGuest) {
-      router.push(`/register?next=/billing/upgrade?plan=${plan}`);
+      void signIn("google", {
+        callbackUrl: `/billing/upgrade?plan=${plan}&auto=1`,
+      });
       return;
     }
 
     void redirectToCheckout(plan);
   };
+
+  useEffect(() => {
+    if (!shouldAutoCheckout) {
+      return;
+    }
+
+    if (!selectedPlan) {
+      return;
+    }
+
+    if (autoCheckoutStarted.current) {
+      return;
+    }
+
+    if (status === "loading") {
+      return;
+    }
+
+    autoCheckoutStarted.current = true;
+
+    const isGuest = guestRegex.test(session?.user?.email ?? "");
+
+    if (isGuest) {
+      void signIn("google", {
+        callbackUrl: `/billing/upgrade?plan=${selectedPlan}&auto=1`,
+      });
+      return;
+    }
+
+    void redirectToCheckout(selectedPlan);
+  }, [selectedPlan, session?.user?.email, shouldAutoCheckout, status]);
 
   return (
     <div className="flex min-h-dvh w-screen items-center justify-center p-6">

@@ -12,13 +12,15 @@ export function AuthForm({
   children,
   defaultEmail = "",
   callbackUrl = "/",
+  showCredentials = true,
 }: {
-  action: NonNullable<
+  action?: NonNullable<
     string | ((formData: FormData) => void | Promise<void>) | undefined
   >;
   children: React.ReactNode;
   defaultEmail?: string;
   callbackUrl?: string;
+  showCredentials?: boolean;
 }) {
   return (
     <Form action={action} className="flex flex-col gap-4 px-4 sm:px-16">
@@ -59,49 +61,53 @@ export function AuthForm({
         Continue with Google
       </Button>
 
-      <div className="flex items-center gap-3 text-muted-foreground text-xs">
-        <span className="h-px flex-1 bg-border" />
-        <span>or</span>
-        <span className="h-px flex-1 bg-border" />
-      </div>
+      {showCredentials ? (
+        <>
+          <div className="flex items-center gap-3 text-muted-foreground text-xs">
+            <span className="h-px flex-1 bg-border" />
+            <span>or</span>
+            <span className="h-px flex-1 bg-border" />
+          </div>
 
-      <div className="flex flex-col gap-2">
-        <Label
-          className="font-normal text-zinc-600 dark:text-zinc-400"
-          htmlFor="email"
-        >
-          Email Address
-        </Label>
+          <div className="flex flex-col gap-2">
+            <Label
+              className="font-normal text-zinc-600 dark:text-zinc-400"
+              htmlFor="email"
+            >
+              Email Address
+            </Label>
 
-        <Input
-          autoComplete="email"
-          autoFocus
-          className="bg-muted text-md md:text-sm"
-          defaultValue={defaultEmail}
-          id="email"
-          name="email"
-          placeholder="user@acme.com"
-          required
-          type="email"
-        />
-      </div>
+            <Input
+              autoComplete="email"
+              autoFocus
+              className="bg-muted text-md md:text-sm"
+              defaultValue={defaultEmail}
+              id="email"
+              name="email"
+              placeholder="user@acme.com"
+              required
+              type="email"
+            />
+          </div>
 
-      <div className="flex flex-col gap-2">
-        <Label
-          className="font-normal text-zinc-600 dark:text-zinc-400"
-          htmlFor="password"
-        >
-          Password
-        </Label>
+          <div className="flex flex-col gap-2">
+            <Label
+              className="font-normal text-zinc-600 dark:text-zinc-400"
+              htmlFor="password"
+            >
+              Password
+            </Label>
 
-        <Input
-          className="bg-muted text-md md:text-sm"
-          id="password"
-          name="password"
-          required
-          type="password"
-        />
-      </div>
+            <Input
+              className="bg-muted text-md md:text-sm"
+              id="password"
+              name="password"
+              required
+              type="password"
+            />
+          </div>
+        </>
+      ) : null}
 
       {children}
     </Form>

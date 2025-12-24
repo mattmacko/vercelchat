@@ -1,75 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useSession } from "next-auth/react";
-import { Suspense, useActionState, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect } from "react";
 import { AuthForm } from "@/components/auth-form";
-import { SubmitButton } from "@/components/submit-button";
 import { toast } from "@/components/toast";
-import { type RegisterActionState, register } from "../actions";
 
 const isSafeNextParam = (value: string | null): value is string =>
   typeof value === "string" && value.startsWith("/") && !value.startsWith("//");
 
 function RegisterPageContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const nextParam = searchParams?.get("next") ?? null;
   const authError = searchParams?.get("error") ?? null;
   const safeNext = isSafeNextParam(nextParam) ? nextParam : null;
   const callbackUrl = safeNext ?? "/";
 
-  const [email, setEmail] = useState("");
-  const [isSuccessful, setIsSuccessful] = useState(false);
-  const hasHandledSuccess = useRef(false);
-
-  const [state, formAction] = useActionState<RegisterActionState, FormData>(
-    register,
-    {
-      status: "idle",
-    }
-  );
-
-  const { update: updateSession } = useSession();
-
   useEffect(() => {
     if (authError) {
       toast({ type: "error", description: "Sign in failed. Please try again." });
     }
-
-    if (state.status === "user_exists") {
-      toast({ type: "error", description: "Account already exists!" });
-    } else if (state.status === "failed") {
-      toast({ type: "error", description: "Failed to create account!" });
-    } else if (state.status === "invalid_data") {
-      toast({
-        type: "error",
-        description: "Failed validating your submission!",
-      });
-    } else if (state.status === "success") {
-      if (hasHandledSuccess.current) {
-        return;
-      }
-
-      hasHandledSuccess.current = true;
-      toast({ type: "success", description: "Account created successfully!" });
-
-      setIsSuccessful(true);
-      updateSession();
-      // If a next param is provided, redirect there after successful signup
-      if (safeNext) {
-        router.replace(safeNext);
-      } else {
-        router.replace("/");
-      }
-    }
-  }, [authError, router, safeNext, state.status, updateSession]);
-
-  const handleSubmit = (formData: FormData) => {
-    setEmail(formData.get("email") as string);
-    formAction(formData);
-  };
+  }, [authError]);
 
   return (
     <div className="flex h-dvh w-screen items-start justify-center bg-background pt-12 md:items-center md:pt-0">
@@ -77,15 +28,10 @@ function RegisterPageContent() {
         <div className="flex flex-col items-center justify-center gap-2 px-4 text-center sm:px-16">
           <h3 className="font-semibold text-xl dark:text-zinc-50">Sign Up</h3>
           <p className="text-gray-500 text-sm dark:text-zinc-400">
-            Create an account with your email and password
+            Continue with Google to create your account
           </p>
         </div>
-        <AuthForm
-          action={handleSubmit}
-          callbackUrl={callbackUrl}
-          defaultEmail={email}
-        >
-          <SubmitButton isSuccessful={isSuccessful}>Sign Up</SubmitButton>
+        <AuthForm callbackUrl={callbackUrl} showCredentials={false}>
           <p className="mt-4 text-center text-gray-600 text-sm dark:text-zinc-400">
             {"Already have an account? "}
             <Link
