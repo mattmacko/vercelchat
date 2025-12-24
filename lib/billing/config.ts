@@ -16,8 +16,10 @@ export const LIFETIME_PLAN = {
   name: "Lifetime",
   price: "$197",
   interval: "one-time",
-  description: "One-time payment for unlimited access forever.",
+  description: "Pay once. Own it forever.",
   features: PRO_PLAN.features,
+  valueNote: "Pays for itself in ~7 months",
+  spotsRemaining: 26,
 };
 
 export type BillingLimitsResponse = {
