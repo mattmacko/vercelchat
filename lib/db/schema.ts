@@ -23,6 +23,7 @@ export const user = pgTable(
     email: varchar("email", { length: 64 }).notNull(),
     password: varchar("password", { length: 64 }),
     tier: varchar("tier", { length: 16 }).notNull().default("free"),
+    lifetimeAccess: boolean("lifetimeAccess").notNull().default(false),
     authProvider: varchar("authProvider", { length: 16 })
       .notNull()
       .default("credentials"),

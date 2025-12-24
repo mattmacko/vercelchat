@@ -145,7 +145,7 @@ function BillingSuccessContent() {
         <h1 className="font-semibold text-2xl">You&apos;re all set 🎉</h1>
         <p className="text-muted-foreground">
           Your upgrade was successful. Head back to the app or open the billing
-          portal to review your subscription details.
+          portal to review your billing details.
         </p>
         <div className="flex w-full flex-col gap-3 sm:flex-row">
           <Link

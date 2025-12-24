@@ -49,9 +49,14 @@ export function isUserProEntitled(
     tier?: string | null;
     stripeSubscriptionId?: string | null;
     proExpiresAt?: Date | null;
+    lifetimeAccess?: boolean | null;
   },
   now = new Date()
 ) {
+  if (user?.lifetimeAccess) {
+    return true;
+  }
+
   if (user?.tier !== "pro" || !user?.stripeSubscriptionId) {
     return false;
   }

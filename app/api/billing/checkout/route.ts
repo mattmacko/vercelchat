@@ -18,9 +18,23 @@ const ACTIVE_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>([
 
 const HTTP_URL_REGEX = /^https?:\/\//;
 const CHECKOUT_IDEMPOTENCY_WINDOW_MS = 5 * 60 * 1000;
+type CheckoutPlan = "monthly" | "lifetime";
 
-async function resolvePriceId(stripe: ReturnType<typeof getStripe>) {
-  const lookupKey = process.env.STRIPE_PRICE_LOOKUP_KEY_PRO;
+function parseCheckoutPlan(value: unknown): CheckoutPlan | null {
+  if (value === "monthly" || value === "lifetime") {
+    return value;
+  }
+  return null;
+}
+
+async function resolvePriceId(
+  stripe: ReturnType<typeof getStripe>,
+  plan: CheckoutPlan
+) {
+  const lookupKey =
+    plan === "lifetime"
+      ? process.env.STRIPE_PRICE_LOOKUP_KEY_LIFETIME
+      : process.env.STRIPE_PRICE_LOOKUP_KEY_PRO;
 
   if (lookupKey) {
     const prices = await stripe.prices.list({
@@ -35,10 +49,17 @@ async function resolvePriceId(stripe: ReturnType<typeof getStripe>) {
     return prices.data[0].id;
   }
 
-  const priceId = process.env.STRIPE_PRICE_ID;
+  const priceId =
+    plan === "lifetime"
+      ? process.env.STRIPE_PRICE_ID_LIFETIME
+      : process.env.STRIPE_PRICE_ID;
 
   if (!priceId) {
-    throw new Error("Missing STRIPE_PRICE_LOOKUP_KEY_PRO or STRIPE_PRICE_ID");
+    const label =
+      plan === "lifetime"
+        ? "STRIPE_PRICE_LOOKUP_KEY_LIFETIME or STRIPE_PRICE_ID_LIFETIME"
+        : "STRIPE_PRICE_LOOKUP_KEY_PRO or STRIPE_PRICE_ID";
+    throw new Error(`Missing ${label}`);
   }
 
   return priceId;
@@ -105,10 +126,28 @@ export async function POST(request: NextRequest) {
     return new ChatSDKError("unauthorized:api").toResponse();
   }
 
+  let plan: CheckoutPlan = "monthly";
+
+  try {
+    const body = await request.json();
+    const parsedPlan = parseCheckoutPlan(body?.plan);
+    if (parsedPlan) {
+      plan = parsedPlan;
+    }
+  } catch (_error) {
+    // Ignore missing/invalid JSON body
+  }
+
+  const planParam = parseCheckoutPlan(request.nextUrl.searchParams.get("plan"));
+  if (planParam) {
+    plan = planParam;
+  }
+
   logInfo("billing:checkout", "Checkout request received", {
     userId: session.user.id,
     userType: session.user.type,
     email: maskEmail(session.user.email),
+    plan,
   });
 
   if (session.user.type === "guest") {
@@ -138,33 +177,45 @@ export async function POST(request: NextRequest) {
     ? portalPath
     : `${origin}${portalPath.startsWith("/") ? portalPath : `/${portalPath}`}`;
 
-  if (
-    dbUser.tier === "pro" &&
-    dbUser.proExpiresAt &&
-    dbUser.proExpiresAt > new Date()
-  ) {
-    logInfo("billing:checkout", "User already has active Pro plan", {
+  if (dbUser.lifetimeAccess) {
+    logInfo("billing:checkout", "User already has lifetime access", {
       userId: session.user.id,
-      proExpiresAt: dbUser.proExpiresAt,
     });
     return NextResponse.json({
-      message: "Already on the Pro plan.",
+      message: "Already on the Lifetime plan.",
       url: manageUrl,
     });
   }
 
-  const existingSubscription = await findActiveSubscription(stripe, {
-    stripeSubscriptionId: dbUser.stripeSubscriptionId,
-    stripeCustomerId: dbUser.stripeCustomerId,
-  });
+  if (plan === "monthly") {
+    if (
+      dbUser.tier === "pro" &&
+      dbUser.proExpiresAt &&
+      dbUser.proExpiresAt > new Date()
+    ) {
+      logInfo("billing:checkout", "User already has active Pro plan", {
+        userId: session.user.id,
+        proExpiresAt: dbUser.proExpiresAt,
+      });
+      return NextResponse.json({
+        message: "Already on the Pro plan.",
+        url: manageUrl,
+      });
+    }
 
-  if (existingSubscription) {
-    logInfo("billing:checkout", "Active subscription already exists", {
-      userId: session.user.id,
-      subscriptionId: existingSubscription.id,
-      status: existingSubscription.status,
+    const existingSubscription = await findActiveSubscription(stripe, {
+      stripeSubscriptionId: dbUser.stripeSubscriptionId,
+      stripeCustomerId: dbUser.stripeCustomerId,
     });
-    return NextResponse.json({ url: manageUrl });
+
+    if (existingSubscription) {
+      logInfo("billing:checkout", "Active subscription already exists", {
+        userId: session.user.id,
+        subscriptionId: existingSubscription.id,
+        status: existingSubscription.status,
+      });
+      return NextResponse.json({ url: manageUrl });
+    }
   }
 
   let customerId = dbUser.stripeCustomerId ?? null;
@@ -187,7 +238,7 @@ export async function POST(request: NextRequest) {
         await setStripeCustomerId(session.user.id, customerId);
       }
 
-    const priceId = await resolvePriceId(stripe);
+    const priceId = await resolvePriceId(stripe, plan);
     const headerIdempotencyKey =
       request.headers.get("x-idempotency-key") ??
       request.headers.get("x-stripe-idempotency-key");
@@ -196,11 +247,13 @@ export async function POST(request: NextRequest) {
     ).toString(36);
     const idempotencyKey =
       headerIdempotencyKey ??
-      `checkout:${session.user.id}:${priceId}:${idempotencyWindow}`;
+      `checkout:${session.user.id}:${plan}:${priceId}:${idempotencyWindow}`;
+    const metadata = { userId: session.user.id, plan };
+    const isLifetime = plan === "lifetime";
 
     const checkoutSession = await stripe.checkout.sessions.create(
       {
-        mode: "subscription",
+        mode: isLifetime ? "payment" : "subscription",
         customer: customerId,
         client_reference_id: session.user.id,
         success_url: `${origin}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
@@ -209,10 +262,14 @@ export async function POST(request: NextRequest) {
         automatic_tax: { enabled: true },
         billing_address_collection: "required",
         customer_update: { address: "auto" },
-        metadata: { userId: session.user.id },
-        subscription_data: {
-          metadata: { userId: session.user.id },
-        },
+        metadata,
+        ...(isLifetime
+          ? {}
+          : {
+              subscription_data: {
+                metadata,
+              },
+            }),
       },
       { idempotencyKey }
     );
@@ -226,6 +283,7 @@ export async function POST(request: NextRequest) {
       sessionId: checkoutSession.id,
       customerId,
       priceId,
+      plan,
     });
 
     return NextResponse.json({ url: checkoutSession.url });

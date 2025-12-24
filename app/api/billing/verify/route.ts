@@ -55,6 +55,7 @@ export async function GET(request: NextRequest) {
     const paymentStatus = checkoutSession.payment_status;
     const canVerifyPayment =
       paymentStatus === "paid" || paymentStatus === "no_payment_required";
+    const plan = checkoutSession.metadata?.plan;
 
     if (!canVerifyPayment) {
       logInfo("billing:verify", "Payment not yet completed", {
@@ -67,15 +68,39 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const subscription =
-      typeof checkoutSession.subscription === "object"
-        ? checkoutSession.subscription
-        : null;
-
     const customerId =
       typeof checkoutSession.customer === "string"
         ? checkoutSession.customer
         : (checkoutSession.customer?.id ?? null);
+
+    const isLifetimeCheckout =
+      plan === "lifetime" || checkoutSession.mode === "payment";
+
+    if (isLifetimeCheckout) {
+      await upsertStripeDetails(session.user.id, {
+        tier: "pro",
+        stripeCustomerId: customerId ?? undefined,
+        stripeSubscriptionId: null,
+        proExpiresAt: null,
+        lifetimeAccess: true,
+      });
+
+      logInfo("billing:verify", "User upgraded to lifetime via verification", {
+        userId: session.user.id,
+        customerId,
+      });
+
+      return NextResponse.json({
+        verified: true,
+        tier: "pro",
+        plan: "lifetime",
+      });
+    }
+
+    const subscription =
+      typeof checkoutSession.subscription === "object"
+        ? checkoutSession.subscription
+        : null;
 
     const subscriptionId =
       typeof checkoutSession.subscription === "string"
@@ -109,6 +134,7 @@ export async function GET(request: NextRequest) {
         verified: true,
         tier: "pro",
         subscriptionId,
+        plan: "monthly",
       });
     }
 

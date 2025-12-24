@@ -456,6 +456,21 @@ export async function getUserById(id: string) {
   }
 }
 
+export async function getUserByStripeCustomerId(customerId: string) {
+  try {
+    const [result] = await db
+      .select()
+      .from(user)
+      .where(eq(user.stripeCustomerId, customerId));
+    return result ?? null;
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to get user by Stripe customer id"
+    );
+  }
+}
+
 export async function setStripeCustomerId(userId: string, customerId: string) {
   try {
     await db
@@ -482,6 +497,7 @@ export async function upsertStripeDetails(
     stripeCustomerId?: string | null;
     stripeSubscriptionId?: string | null;
     proExpiresAt?: Date | null;
+    lifetimeAccess?: boolean;
   }
 ) {
   const updateData: Record<string, any> = {};
@@ -500,6 +516,10 @@ export async function upsertStripeDetails(
 
   if (data.proExpiresAt !== undefined) {
     updateData.proExpiresAt = data.proExpiresAt;
+  }
+
+  if (data.lifetimeAccess !== undefined) {
+    updateData.lifetimeAccess = data.lifetimeAccess;
   }
 
   if (Object.keys(updateData).length === 0) {
@@ -527,6 +547,7 @@ export async function updateByCustomerId(
     tier?: "pro" | "free";
     stripeSubscriptionId?: string | null;
     proExpiresAt?: Date | null;
+    lifetimeAccess?: boolean;
   }
 ) {
   const updateData: Record<string, any> = {};
@@ -541,6 +562,10 @@ export async function updateByCustomerId(
 
   if (data.proExpiresAt !== undefined) {
     updateData.proExpiresAt = data.proExpiresAt;
+  }
+
+  if (data.lifetimeAccess !== undefined) {
+    updateData.lifetimeAccess = data.lifetimeAccess;
   }
 
   if (Object.keys(updateData).length === 0) {

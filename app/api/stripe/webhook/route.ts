@@ -7,6 +7,8 @@ import {
 } from "@/lib/billing/entitlement";
 import {
   claimStripeEvent,
+  getUserById,
+  getUserByStripeCustomerId,
   markStripeEventFailed,
   markStripeEventProcessed,
   updateByCustomerId,
@@ -83,6 +85,51 @@ async function cancelOtherActiveSubscriptions({
   }
 }
 
+async function cancelActiveSubscriptions({
+  stripe,
+  customerId,
+}: {
+  stripe: ReturnType<typeof getStripe>;
+  customerId: string;
+}) {
+  try {
+    const subscriptions = await stripe.subscriptions.list({
+      customer: customerId,
+      status: "all",
+      limit: 20,
+    });
+
+    const activeSubscriptions = subscriptions.data.filter((subscription) =>
+      SUBSCRIPTION_DEDUPE_STATUSES.has(subscription.status)
+    );
+
+    await Promise.all(
+      activeSubscriptions.map((subscription) =>
+        stripe.subscriptions
+          .cancel(subscription.id)
+          .then(() => {
+            logInfo("stripe:webhook", "Canceled subscription for lifetime", {
+              subscriptionId: subscription.id,
+              customerId,
+            });
+          })
+          .catch((error) => {
+            logError("stripe:webhook", "Failed to cancel subscription", {
+              subscriptionId: subscription.id,
+              customerId,
+              error,
+            });
+          })
+      )
+    );
+  } catch (error) {
+    logError("stripe:webhook", "Stripe subscription cancellation failed", {
+      customerId,
+      error,
+    });
+  }
+}
+
 function pickPreferredEntitledSubscription(
   subscriptions: Stripe.Subscription[]
 ) {
@@ -126,6 +173,37 @@ async function syncCustomerEntitlement({
   const preferred = pickPreferredEntitledSubscription(entitled);
 
   if (!preferred) {
+    const existingUser = userId
+      ? await getUserById(userId)
+      : await getUserByStripeCustomerId(customerId);
+
+    if (existingUser?.lifetimeAccess) {
+      if (userId) {
+        await upsertStripeDetails(userId, {
+          tier: "pro",
+          stripeCustomerId: customerId,
+          stripeSubscriptionId: null,
+          proExpiresAt: null,
+          lifetimeAccess: true,
+        });
+      } else {
+        await updateByCustomerId(customerId, {
+          tier: "pro",
+          stripeSubscriptionId: null,
+          proExpiresAt: null,
+          lifetimeAccess: true,
+        });
+      }
+
+      logInfo("stripe:webhook", "Lifetime access preserved on sync", {
+        eventId,
+        customerId,
+        hasUserId: Boolean(userId),
+      });
+
+      return { entitled: true, subscription: null };
+    }
+
     if (userId) {
       await upsertStripeDetails(userId, {
         tier: "free",
@@ -260,6 +338,42 @@ export async function POST(request: NextRequest) {
           typeof sessionCustomer === "string"
             ? sessionCustomer
             : (sessionCustomer?.id ?? null);
+
+        const plan = session.metadata?.plan;
+        const isLifetime = plan === "lifetime" || session.mode === "payment";
+
+        if (isLifetime) {
+          const userId = session.metadata?.userId as string | undefined;
+
+          if (userId) {
+            await upsertStripeDetails(userId, {
+              tier: "pro",
+              stripeCustomerId: customerId ?? undefined,
+              stripeSubscriptionId: null,
+              proExpiresAt: null,
+              lifetimeAccess: true,
+            });
+          } else if (customerId) {
+            await updateByCustomerId(customerId, {
+              tier: "pro",
+              stripeSubscriptionId: null,
+              proExpiresAt: null,
+              lifetimeAccess: true,
+            });
+          }
+
+          if (customerId) {
+            await cancelActiveSubscriptions({ stripe, customerId });
+          }
+
+          logInfo("stripe:webhook", "Lifetime checkout completed", {
+            eventId: event.id,
+            customerId,
+            hasUserId: Boolean(userId),
+          });
+
+          break;
+        }
 
         const subscriptionId =
           typeof session.subscription === "string"

@@ -2,8 +2,17 @@
 
 import { toast } from "@/components/toast";
 
-async function postAndExtractUrl(endpoint: string) {
-  const response = await fetch(endpoint, { method: "POST" });
+export type CheckoutPlan = "monthly" | "lifetime";
+
+async function postAndExtractUrl(
+  endpoint: string,
+  body?: Record<string, unknown>
+) {
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
 
   if (!response.ok) {
     let message = "Unable to complete request. Please try again.";
@@ -29,9 +38,9 @@ async function postAndExtractUrl(endpoint: string) {
   return data.url;
 }
 
-export async function redirectToCheckout() {
+export async function redirectToCheckout(plan: CheckoutPlan = "monthly") {
   try {
-    const url = await postAndExtractUrl("/api/billing/checkout");
+    const url = await postAndExtractUrl("/api/billing/checkout", { plan });
     window.location.href = url;
   } catch (error: any) {
     toast({
