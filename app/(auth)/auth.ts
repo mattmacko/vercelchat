@@ -25,6 +25,8 @@ declare module "next-auth" {
     user: {
       id: string;
       type: UserType;
+      justSignedUp?: boolean;
+      signupMethod?: string;
     } & DefaultSession["user"];
   }
 
@@ -41,6 +43,8 @@ declare module "next-auth/jwt" {
     id: string;
     type: UserType;
     googleId?: string;
+    justSignedUp?: boolean;
+    signupMethod?: string;
   }
 }
 
@@ -132,10 +136,15 @@ export const {
 
       return true;
     },
-    async jwt({ token, user, account, profile }) {
+    async jwt({ token, user, account, profile, trigger, session }) {
       const isGoogleSignIn = account?.provider === "google";
 
       try {
+        if (trigger === "update" && session?.justSignedUp === false) {
+          token.justSignedUp = undefined;
+          token.signupMethod = undefined;
+        }
+
         if (isGoogleSignIn) {
           const googleId = account.providerAccountId;
           const emailFromProfile =
@@ -169,6 +178,7 @@ export const {
               : null;
 
           const isGuestSession = token.type === "guest" && Boolean(token.id);
+          let justSignedUp = false;
 
           // IMPORTANT: Check if email already belongs to an existing account FIRST
           // This prevents unique constraint failures when a guest tries to sign in
@@ -195,6 +205,7 @@ export const {
                 googleId,
                 emailVerifiedAt,
               });
+              justSignedUp = true;
             } catch (error) {
               logError("auth:jwt", "Guest -> Google conversion failed", {
                 userId: token.id,
@@ -212,6 +223,7 @@ export const {
               emailVerifiedAt,
             });
             dbUser = createdUser;
+            justSignedUp = true;
             logInfo("auth:jwt", "Created new Google user", {
               userId: dbUser.id,
               email: maskEmail(dbUser.email),
@@ -222,6 +234,14 @@ export const {
           token.type = mapUserTypeFromRecord(dbUser);
           token.email = dbUser.email;
           token.googleId = dbUser.googleId ?? googleId;
+
+          if (justSignedUp) {
+            token.justSignedUp = true;
+            token.signupMethod = account?.provider ?? "google";
+          } else {
+            token.justSignedUp = undefined;
+            token.signupMethod = undefined;
+          }
 
           return token;
         }
@@ -272,6 +292,8 @@ export const {
         session.user.id = token.id;
         session.user.type = token.type;
         session.user.email = token.email ?? session.user.email;
+        session.user.justSignedUp = token.justSignedUp;
+        session.user.signupMethod = token.signupMethod;
       }
 
       return session;

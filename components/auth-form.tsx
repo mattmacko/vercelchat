@@ -2,6 +2,7 @@
 
 import Form from "next/form";
 import { signIn } from "next-auth/react";
+import { setSignupSource, type SignupSource } from "@/lib/gtm";
 
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -13,18 +14,24 @@ export function AuthForm({
   defaultEmail = "",
   callbackUrl = "/",
   showCredentials = true,
+  signupSource,
 }: {
   action?: string | ((formData: FormData) => void | Promise<void>);
   children: React.ReactNode;
   defaultEmail?: string;
   callbackUrl?: string;
   showCredentials?: boolean;
+  signupSource?: SignupSource;
 }) {
   const formBody = (
     <>
       <Button
         className="gap-2"
         onClick={() => {
+          if (signupSource) {
+            setSignupSource(signupSource);
+          }
+
           signIn("google", { callbackUrl });
         }}
         type="button"

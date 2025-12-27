@@ -56,6 +56,14 @@ export async function GET(request: NextRequest) {
     const canVerifyPayment =
       paymentStatus === "paid" || paymentStatus === "no_payment_required";
     const plan = checkoutSession.metadata?.plan;
+    const amountTotal =
+      typeof checkoutSession.amount_total === "number"
+        ? checkoutSession.amount_total
+        : null;
+    const currency =
+      typeof checkoutSession.currency === "string"
+        ? checkoutSession.currency
+        : null;
 
     if (!canVerifyPayment) {
       logInfo("billing:verify", "Payment not yet completed", {
@@ -94,6 +102,8 @@ export async function GET(request: NextRequest) {
         verified: true,
         tier: "pro",
         plan: "lifetime",
+        amountTotal,
+        currency,
       });
     }
 
@@ -135,6 +145,8 @@ export async function GET(request: NextRequest) {
         tier: "pro",
         subscriptionId,
         plan: "monthly",
+        amountTotal,
+        currency,
       });
     }
 

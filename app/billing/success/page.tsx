@@ -1,5 +1,6 @@
 "use client";
 
+import { sendGTMEvent } from "@next/third-parties/google";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
@@ -28,6 +29,7 @@ function BillingSuccessContent() {
   );
   const verifyAttempts = useRef(0);
   const verifyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const purchaseTracked = useRef(false);
 
   useEffect(() => {
     if (!sessionId) {
@@ -58,6 +60,40 @@ function BillingSuccessContent() {
 
         if (response.ok && data.verified) {
           setVerifyState("success");
+
+          if (!purchaseTracked.current && sessionId) {
+            purchaseTracked.current = true;
+
+            const amountTotal =
+              typeof data?.amountTotal === "number" ? data.amountTotal : null;
+            const currency =
+              typeof data?.currency === "string"
+                ? data.currency.toUpperCase()
+                : null;
+            const plan = typeof data?.plan === "string" ? data.plan : null;
+
+            const payload: Record<string, unknown> = {
+              event: "purchase",
+              transaction_id: sessionId,
+            };
+
+            if (typeof amountTotal === "number") {
+              payload.value = amountTotal / 100;
+            }
+
+            if (currency) {
+              payload.currency = currency;
+            }
+
+            if (plan) {
+              payload.plan = plan;
+              payload.purchase_type =
+                plan === "lifetime" ? "one_time" : "subscription";
+            }
+
+            sendGTMEvent(payload);
+          }
+
           // Refresh billing limits to update UI
           await mutate();
         } else if (response.ok && !data.verified) {

@@ -25,6 +25,7 @@ import { useBillingLimits } from "@/hooks/use-billing";
 import { redirectToCheckout } from "@/lib/billing/client";
 import { LIFETIME_PLAN, PRO_PLAN } from "@/lib/billing/config";
 import { guestRegex } from "@/lib/constants";
+import { setSignupSource } from "@/lib/gtm";
 
 function UpgradeOverlayContent({
   numericLimit,
@@ -209,6 +210,7 @@ export function UpgradeOverlay({
 
     if (isGuest) {
       onOpenChange(false);
+      setSignupSource("upgrade_flow");
       signIn("google", {
         callbackUrl: `/billing/upgrade?plan=${plan}&auto=1`,
       });

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { redirectToCheckout } from "@/lib/billing/client";
 import { LIFETIME_PLAN, PRO_PLAN } from "@/lib/billing/config";
 import { guestRegex } from "@/lib/constants";
+import { setSignupSource } from "@/lib/gtm";
 
 function UpgradePageContent() {
   const { data: session, status } = useSession();
@@ -42,6 +43,7 @@ function UpgradePageContent() {
     const isGuest = guestRegex.test(session?.user?.email ?? "");
 
     if (isGuest) {
+      setSignupSource("upgrade_flow");
       signIn("google", {
         callbackUrl: `/billing/upgrade?plan=${plan}&auto=1`,
       });
@@ -73,6 +75,7 @@ function UpgradePageContent() {
     const isGuest = guestRegex.test(session?.user?.email ?? "");
 
     if (isGuest) {
+      setSignupSource("upgrade_flow");
       signIn("google", {
         callbackUrl: `/billing/upgrade?plan=${selectedPlan}&auto=1`,
       });

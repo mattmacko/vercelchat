@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { GoogleTagManager } from "@next/third-parties/google";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import { Toaster } from "sonner";
+import { GTMClientTracker } from "@/components/gtm-client-tracker";
 import { ThemeProvider } from "@/components/theme-provider";
 
 import "./globals.css";
@@ -37,6 +39,7 @@ const instrumentSerif = Instrument_Serif({
 
 const LIGHT_THEME_COLOR = "hsl(0 0% 100%)";
 const DARK_THEME_COLOR = "hsl(240deg 10% 3.92%)";
+const GTM_ID = "GTM-KT9KPVF4";
 const THEME_COLOR_SCRIPT = `\
 (function() {
   var html = document.documentElement;
@@ -79,6 +82,7 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased">
+        <GoogleTagManager gtmId={GTM_ID} />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
@@ -86,7 +90,10 @@ export default function RootLayout({
           enableSystem
         >
           <Toaster position="top-center" />
-          <SessionProvider>{children}</SessionProvider>
+          <SessionProvider>
+            <GTMClientTracker />
+            {children}
+          </SessionProvider>
         </ThemeProvider>
       </body>
     </html>

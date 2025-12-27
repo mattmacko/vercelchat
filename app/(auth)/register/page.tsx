@@ -34,7 +34,11 @@ function RegisterPageContent() {
             Continue with Google to create your account
           </p>
         </div>
-        <AuthForm callbackUrl={callbackUrl} showCredentials={false}>
+        <AuthForm
+          callbackUrl={callbackUrl}
+          showCredentials={false}
+          signupSource="signup_page"
+        >
           <p className="mt-4 text-center text-gray-600 text-sm dark:text-zinc-400">
             {"Already have an account? "}
             <Link
