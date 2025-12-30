@@ -1,4 +1,4 @@
-export const FREE_LIFETIME_MESSAGE_LIMIT = 5;
+export const FREE_LIFETIME_MESSAGE_LIMIT = 3;
 
 export const PRO_PLAN = {
   name: "Pro",

@@ -13,6 +13,7 @@ function RegisterPageContent() {
   const searchParams = useSearchParams();
   const nextParam = searchParams?.get("next") ?? null;
   const authError = searchParams?.get("error") ?? null;
+  const reason = searchParams?.get("reason") ?? null;
   const safeNext = isSafeNextParam(nextParam) ? nextParam : null;
   const callbackUrl = safeNext ?? "/";
 
@@ -31,7 +32,9 @@ function RegisterPageContent() {
         <div className="flex flex-col items-center justify-center gap-2 px-4 text-center sm:px-16">
           <h3 className="font-semibold text-xl dark:text-zinc-50">Sign Up</h3>
           <p className="text-gray-500 text-sm dark:text-zinc-400">
-            Continue with Google to create your account
+            {reason === "unlock_chat"
+              ? "Sign up to try for free and get trial messages"
+              : "Continue with Google to create your account"}
           </p>
         </div>
         <AuthForm

@@ -2,8 +2,9 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { unstable_serialize } from "swr/infinite";
 import { ChatHeader } from "@/components/chat-header";
@@ -56,6 +57,8 @@ export function Chat({
     initialVisibilityType,
   });
 
+  const { data: session } = useSession();
+  const router = useRouter();
   const { mutate } = useSWRConfig();
   const { setDataStream } = useDataStream();
 
@@ -76,7 +79,7 @@ export function Chat({
     sendMessage,
     status,
     stop,
-    regenerate,
+    regenerate: originalRegenerate,
     resumeStream,
   } = useChat<ChatMessage>({
     id,
@@ -129,6 +132,41 @@ export function Chat({
     },
   });
 
+  const handleSendMessage = useCallback(
+    async (
+      message: Parameters<typeof sendMessage>[0],
+      options?: Parameters<typeof sendMessage>[1]
+    ) => {
+      if (session?.user?.type === "guest") {
+        router.push(
+          `/register?next=${encodeURIComponent(
+            window.location.pathname
+          )}&reason=unlock_chat`
+        );
+        return;
+      }
+
+      return await sendMessage(message, options);
+    },
+    [session?.user?.type, sendMessage, router]
+  );
+
+  const handleRegenerate = useCallback(
+    async (options?: Parameters<typeof originalRegenerate>[0]) => {
+      if (session?.user?.type === "guest") {
+        router.push(
+          `/register?next=${encodeURIComponent(
+            window.location.pathname
+          )}&reason=unlock_chat`
+        );
+        return;
+      }
+
+      return await originalRegenerate(options);
+    },
+    [session?.user?.type, originalRegenerate, router]
+  );
+
   const searchParams = useSearchParams();
   const query = searchParams.get("query");
 
@@ -136,7 +174,7 @@ export function Chat({
 
   useEffect(() => {
     if (query && !hasAppendedQuery) {
-      sendMessage({
+      handleSendMessage({
         role: "user" as const,
         parts: [{ type: "text", text: query }],
       });
@@ -144,7 +182,7 @@ export function Chat({
       setHasAppendedQuery(true);
       window.history.replaceState({}, "", `/chat/${id}`);
     }
-  }, [query, sendMessage, hasAppendedQuery, id]);
+  }, [query, handleSendMessage, hasAppendedQuery, id]);
 
   const { data: votes } = useSWR<Vote[]>(
     messages.length >= 2 ? `/api/vote?chatId=${id}` : null,
@@ -175,7 +213,7 @@ export function Chat({
           isArtifactVisible={isArtifactVisible}
           isReadonly={isReadonly}
           messages={messages}
-          regenerate={regenerate}
+          regenerate={handleRegenerate}
           selectedModelId={initialChatModel}
           setMessages={setMessages}
           status={status}
@@ -192,7 +230,7 @@ export function Chat({
               onModelChange={setCurrentModelId}
               selectedModelId={currentModelId}
               selectedVisibilityType={visibilityType}
-              sendMessage={sendMessage}
+              sendMessage={handleSendMessage}
               setAttachments={setAttachments}
               setInput={setInput}
               setMessages={setMessages}
@@ -210,10 +248,10 @@ export function Chat({
         input={input}
         isReadonly={isReadonly}
         messages={messages}
-        regenerate={regenerate}
+        regenerate={handleRegenerate}
         selectedModelId={currentModelId}
         selectedVisibilityType={visibilityType}
-        sendMessage={sendMessage}
+        sendMessage={handleSendMessage}
         setAttachments={setAttachments}
         setInput={setInput}
         setMessages={setMessages}
